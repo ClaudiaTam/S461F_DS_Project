@@ -1,4 +1,4 @@
-# S461F_DS_Project
+# S461F Data Science Project
 # Table of Contents
 .
 .
