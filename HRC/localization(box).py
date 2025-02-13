@@ -99,14 +99,6 @@ def finish_crop(event):
         crop_box = (x1, y1, x2, y2)
         cropped_image = pdf_image.crop(crop_box)
 
-        # Convert the cropped image to grayscale
-        cropped_image = cropped_image.convert("L")  # "L" mode is for grayscale
-
-        # Apply threshold to make the digits white on a black background
-        threshold_level = 158  # Adjust this value as needed
-        cropped_image = cropped_image.point(lambda p: 255 if p > threshold_level else 0)
-        cropped_image = ImageOps.invert(cropped_image)
-
         # Save the cropped region as a temporary image to pass to localization
         temp_image_path = "temp_cropped_region.png"
         cropped_image.save(temp_image_path)
@@ -125,15 +117,16 @@ def finish_crop(event):
         if rect_id:
             canvas.delete(rect_id)
 
-def localization(image_path, margin=5):
+def localization(image_path, margin=2):
     """Localize handwritten text from the image and display bounding boxes."""
     # Load and preprocess the image
     image = cv2.imread(image_path)
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
+    INV_image = cv2.bitwise_not(image)  # Invert the image
+    gray = cv2.cvtColor(INV_image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
 
     # Thresholding to detect handwritten text
     thresh = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 2
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
     )
 
     # Find contours
@@ -171,6 +164,8 @@ def localization(image_path, margin=5):
         cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Draw bounding box
 
     # Display the image with bounding boxes
+    cv2.imshow("INV_image", INV_image)
+    cv2.imshow("thresh", thresh)
     cv2.imshow("Localized Regions", image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
@@ -179,7 +174,7 @@ def localization(image_path, margin=5):
 
 # Initialize the main tkinter window
 root = tk.Tk()
-root.title("PDF Cropper with Localization")
+root.title("Localization")
 
 # Global variables
 pdf_image = None
