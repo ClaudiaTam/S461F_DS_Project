@@ -43,7 +43,7 @@ class Net(torch.nn.Module):
         return output
 
 model = Net()
-model_file = "/Users/ryan/Desktop/DL/FYP/MNIST_Model_seed_16059/mnist_cnn_epoch:22_test-accuracy:99.6500_test-loss:0.0119.pt"
+model_file = "/Users/ryan/Desktop/DL/FYP/MNIST_Model_seed_83082/mnist_cnn_epoch:6_test-accuracy:99.5000_test-loss:0.0169.pt"
 try:
     model.load_state_dict(torch.load(model_file, map_location=torch.device('cpu')))
     model.eval()
