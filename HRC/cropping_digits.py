@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from PIL import ImageTk, ImageOps
+from PIL import ImageTk
 from pdf2image import convert_from_path
 import cv2
 import numpy as np
@@ -15,6 +15,7 @@ def load_pdf():
     )
     if not file_path:
         return
+
     try:
         # Convert the PDF to images (one image per page)
         images = convert_from_path(file_path, dpi=200)
@@ -71,7 +72,7 @@ def update_crop(event):
     canvas.coords(rect_id, start_x + canvas_offset_x, start_y + canvas_offset_y, end_x, end_y)
 
 def finish_crop(event):
-    """Finish the crop selection and process the image."""
+    """Finish the crop selection and crop the image."""
     global pdf_image, scaled_image, image_scale, rect_id
     if pdf_image is None:
         messagebox.showerror("Error", "No PDF image loaded.")
@@ -98,38 +99,13 @@ def finish_crop(event):
         crop_box = (x1, y1, x2, y2)
         cropped_image = pdf_image.crop(crop_box)
 
-        # Save the cropped region temporarily
+        # Save the cropped region as a temporary image to pass to localization
         temp_image_path = "temp_cropped_region.png"
         cropped_image.save(temp_image_path)
 
-        # Perform localization
+        # Perform localization and cropping without saving cropped images
         localized_boxes = localization(temp_image_path)
-
-        if localized_boxes:
-            # Sort bounding boxes left to right
-            localized_boxes.sort(key=lambda b: b[0])  # Sort by x-coordinate
-
-            # Get extreme points
-            leftmost_box = localized_boxes[0]
-            rightmost_box = localized_boxes[-1]
-
-            # Define extreme coordinates
-            final_x1, final_y1 = leftmost_box[0], leftmost_box[1]  # Top-left
-            final_x2, final_y2 = rightmost_box[0] + rightmost_box[2], rightmost_box[1] + rightmost_box[3]  # Bottom-right
-
-            # Crop the large bounding region
-            final_crop_box = (final_x1, final_y1, final_x2, final_y2)
-            final_cropped_image = cropped_image.crop(final_crop_box)
-
-            # Save the final cropped region
-            final_image_path = "final_cropped_region.png"
-            final_cropped_image.save(final_image_path)
-
-            # Process the final cropped image to remove vertical lines
-            process_image(final_image_path)
-
-        else:
-            messagebox.showinfo("No Regions Found", "No bounding regions were detected.")
+        messagebox.showinfo("Success", f"Localized {len(localized_boxes)} regions. Digits saved in output directories.")
 
     except Exception as e:
         messagebox.showerror("Error", f"Failed to crop image: {e}")
@@ -141,63 +117,92 @@ def finish_crop(event):
         if rect_id:
             canvas.delete(rect_id)
 
-def localization(image_path, margin=2):
-    """Localize handwritten text from the image and display bounding boxes."""
-    # Load and preprocess the image
-    image = cv2.imread(image_path)
-    INV_image = cv2.bitwise_not(image)  # Invert the image
-    gray = cv2.cvtColor(INV_image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
+def save_cropped_images(image, boxes, output_folder="output"):
+    """Save the cropped images based on the localized boxes and process each."""
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
 
-    # Thresholding to detect handwritten text
+    for i, (x, y, w, h) in enumerate(boxes):
+        cropped_image = image[y:y+h, x:x+w]
+        output_path = os.path.join(output_folder, f"cropped_{i+1}.png")
+        cv2.imwrite(output_path, cropped_image)
+        print(f"Saved {output_path}")
+
+        # Process the cropped image to extract digits
+        digit_output_dir = os.path.join(output_folder, f"cropped_{i+1}_digits")
+        process_image(output_path, digit_output_dir)
+
+def localization(image_path, margin=2):
+    """Localize small rectangles."""
+    image = cv2.imread(image_path)
+    INV_image = cv2.bitwise_not(image)
+    gray = cv2.cvtColor(INV_image, cv2.COLOR_BGR2GRAY)
+
     thresh = cv2.adaptiveThreshold(
         gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
     )
 
-    # Find contours
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    # Store bounding boxes
-    bounding_boxes = []
-
-    # Collect bounding boxes that meet size and aspect ratio criteria
-    for contour in contours:
-        x, y, w, h = cv2.boundingRect(contour)
-
-        # Filtering based on size and aspect ratio to exclude noise
-        if 30 < w < 200 and 30 < h < 100:  # Adjust thresholds as needed
-            bounding_boxes.append((x, y, w, h))
-
-    # Filter out nested bounding boxes and boxes that touch the edges
-    final_boxes = []
-    image_height, image_width = image.shape[:2]
-
-    for i, (x1, y1, w1, h1) in enumerate(bounding_boxes):
-        is_nested = False
-        for j, (x2, y2, w2, h2) in enumerate(bounding_boxes):
-            if i != j:  # Don't compare a box with itself
-                # Check if (x1, y1, w1, h1) is fully inside (x2, y2, w2, h2)
-                if x1 >= x2 and y1 >= y2 and x1 + w1 <= x2 + w2 and y1 + h1 <= y2 + h2:
-                    is_nested = True
-                    break
-        # Check if the bounding box touches the edges of the cropped region
-        if not is_nested and x1 >= margin and y1 >= margin and x1 + w1 <= image_width - margin and y1 + h1 <= image_height - margin:
-            final_boxes.append((x1, y1, w1, h1))
-
-    # Draw the final bounding boxes on the original image
-    for (x, y, w, h) in final_boxes:
-        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Draw bounding box
-
-    # Show the cropped image with bounding boxes for debugging
-    cv2.imshow("Cropped Image with Bounding Boxes", image)
+    cv2.imshow("Threshold", thresh)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-    return final_boxes  # Return bounding boxes for any further processing if needed
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-def process_image(image_path):
+    small_boxes = []
+    image_height, image_width = image.shape[:2]
+
+    small_box_min_w, small_box_max_w = 30, 200
+    small_box_min_h, small_box_max_h = 30, 150
+
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+
+        # Detect small boxes
+        if small_box_min_w < w < small_box_max_w and small_box_min_h < h < small_box_max_h:
+            small_boxes.append((x, y, w, h))
+
+    # Process small boxes to find encompassing rectangle
+    big_boxes = []
+    final_small_boxes = []
+    for i, (x1, y1, w1, h1) in enumerate(small_boxes):
+        is_nested = False
+        for j, (x2, y2, w2, h2) in enumerate(small_boxes):
+            if i != j and (x1 >= x2 and y1 >= y2 and x1 + w1 <= x2 + w2 and y1 + h1 <= y2 + h2):
+                is_nested = True
+                break
+        if not is_nested and x1 >= margin and y1 >= margin and x1 + w1 <= image_width - margin and y1 + h1 <= image_height - margin:
+            final_small_boxes.append((x1, y1, w1, h1))
+
+    if final_small_boxes:
+        min_x = min(box[0] for box in final_small_boxes)
+        min_y = min(box[1] for box in final_small_boxes)
+        max_x = max(box[0] + box[2] for box in final_small_boxes)
+        max_y = max(box[1] + box[3] for box in final_small_boxes)
+        big_box = (min_x, min_y, max_x - min_x, max_y - min_y)
+        big_boxes.append(big_box)
+
+    # Draw bounding boxes on the visualization image
+    for (x, y, w, h) in big_boxes:
+        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+    # Show the visualization image with bounding boxes
+    cv2.imshow("Localized Regions", image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    # Save the cropped images from the original image (without bounding boxes)
+    save_cropped_images(image, big_boxes)
+
+    return big_boxes
+
+def process_image(image_path, output_dir):
     """Process the image to remove vertical lines, detect words, and crop them in MNIST format."""
     # Load the image
     img = cv2.imread(image_path)
+
+    cv2.imshow("img", img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
     # Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -209,21 +214,19 @@ def process_image(image_path):
     binary = cv2.adaptiveThreshold(
         enhanced_gray, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY_INV, 21, 12  # 增大block size和C值
+        cv2.THRESH_BINARY_INV, 21, 12
     )
 
-    # Clear border noise
-    border_size = 5  # Adjust based on noise size
-    height, width = binary.shape
-    binary[:border_size, :] = 0          # Clear top border
-    binary[-border_size:, :] = 0         # Clear bottom border
-    binary[:, :border_size] = 0          # Clear left border
-    #binary[:, -border_size:] = 0         # Clear right border
-
-    # Debug
-    cv2.imshow('binary', binary)
+    cv2.imshow("binary", binary)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+    # Clear border noise
+    border_size = 5
+    height, width = binary.shape
+    binary[:border_size, :] = 0
+    binary[-border_size:, :] = 0
+    binary[:, :border_size] = 0
 
     # Detect vertical lines using morphological operations
     vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 30))
@@ -247,31 +250,25 @@ def process_image(image_path):
     repaired_binary = cv2.morphologyEx(repaired_binary, cv2.MORPH_CLOSE, repair_kernel)
 
     # Find contours on the cleaned binary image
-    contours, _ = cv2.findContours(repaired_binary , cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(repaired_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Create a directory to save cropped digits
+    # Create output directory
     output_dir = "/Users/ryan/Desktop/cropped_digits"
     os.makedirs(output_dir, exist_ok=True)
 
     def preprocess_to_mnist_format(image):
         """Convert an image to MNIST format (28x28, centered, grayscale)."""
-        # Convert to grayscale if needed
         if len(image.shape) > 2:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
-        # Threshold to ensure binary image
         _, image = cv2.threshold(image, 128, 255, cv2.THRESH_BINARY)
         
-        # Find bounding box coordinates
         coords = cv2.findNonZero(image)
         if coords is None:
             return np.zeros((28, 28), dtype=np.uint8)
         x, y, w, h = cv2.boundingRect(coords)
         
-        # Crop the digit
         digit = image[y:y+h, x:x+w]
-        
-        # Resize to fit within 20x20 while preserving aspect ratio
         max_dim = max(w, h)
         if max_dim == 0:
             return np.zeros((28, 28), dtype=np.uint8)
@@ -280,54 +277,40 @@ def process_image(image_path):
         new_h = int(h * scale)
         resized = cv2.resize(digit, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
         
-        # Create a 28x28 canvas and center the digit
         canvas = np.zeros((28, 28), dtype=np.uint8)
         x_offset = (28 - new_w) // 2
         y_offset = (28 - new_h) // 2
         canvas[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
         
-        
-        # Dilate the digit to make it thicker
         vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1,2))
         dilated_canvas = cv2.dilate(canvas, vertical_kernel, iterations=1)
         return dilated_canvas
 
-    # Extract bounding boxes and sort them by x-coordinate (left to right)
+    # Extract bounding boxes and sort them by x-coordinate
     bounding_boxes = []
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
-        if 5 < w < 50 and 20 < h < 60:  # Adjust thresholds as needed
+        if 5 < w < 50 and 17 < h < 60:
             bounding_boxes.append((x, y, w, h))
 
-    # Sort bounding boxes by x-coordinate (left to right)
     bounding_boxes.sort(key=lambda box: box[0])
 
-    # Process each bounding box in sorted order
+    # Process each bounding box
     for i, (x, y, w, h) in enumerate(bounding_boxes):
-        # Extract the digit region
         digit_roi = cleaned_binary[y:y+h, x:x+w]
-        
-        # Convert to MNIST format
         mnist_digit = preprocess_to_mnist_format(digit_roi)
-        
-        # Save the MNIST formatted digit
         digit_filename = os.path.join(output_dir, f"digit_{i+1}_mnist.png")
         cv2.imwrite(digit_filename, mnist_digit)
-        
-        # Draw rectangle on original image for visualization
-        cv2.rectangle(cleaned_binary, (x, y), (x + w, y + h), (0, 0, 0), 1)
+        cv2.rectangle(cleaned_binary, (x, y), (x + w, y + h), (255, 255, 255), 1) 
 
     # Display results
     cv2.imshow('Cleaned Image with Bounding Boxes', cleaned_binary)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-    # Notify the user that cropping is complete
-    messagebox.showinfo("Cropping Complete", f"MNIST formatted digits have been saved in the '{output_dir}' directory.")
-    
 # Initialize the main tkinter window
 root = tk.Tk()
-root.title("Localization")
+root.title("Localize Small Boxes")
 
 # Global variables
 pdf_image = None
@@ -338,10 +321,10 @@ start_x = start_y = 0
 rect_id = None
 
 # Create GUI elements
-frame = tk.Frame(root)
-frame.pack(pady=10)
+control_frame = tk.Frame(root)
+control_frame.pack(pady=10)
 
-upload_button = tk.Button(frame, text="Upload PDF", command=load_pdf)
+upload_button = tk.Button(control_frame, text="Upload PDF", command=load_pdf)
 upload_button.grid(row=0, column=0, padx=5)
 
 canvas = tk.Canvas(root, width=600, height=800, bg="gray")
@@ -357,3 +340,4 @@ root.state('zoomed')
 
 # Start the main event loop
 root.mainloop()
+
