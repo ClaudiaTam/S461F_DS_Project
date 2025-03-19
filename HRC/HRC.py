@@ -6,6 +6,7 @@ import torch
 from torchvision import transforms
 import cv2
 import numpy as np
+import time
 import os
 
 # Define the model architecture (same as HRC.py)
@@ -43,7 +44,7 @@ class Net(torch.nn.Module):
 
 # Load the pre-trained model
 model = Net()
-model_file = "/Users/ryan/Desktop/DL/FYP/MNIST_Model_seed_83082/mnist_cnn_epoch:6_test-accuracy:99.5000_test-loss:0.0169.pt"
+model_file = "/Users/ryan/Desktop/DL/FYP/Combined_Model_seed_14598/combined_cnn_epoch:9_test-accuracy:99.5481_test-loss:0.0128.pt"
 try:
     model.load_state_dict(torch.load(model_file, map_location=torch.device('cpu')))
     model.eval()
@@ -195,11 +196,6 @@ def process_image(image_path):
     repair_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
     repaired_binary = cv2.dilate(cleaned_binary, repair_kernel, iterations=1)
 
-    # Find contours
-    contours, _ = cv2.findContours(repaired_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    output_dir = "/Users/ryan/Desktop/cropped_digits"
-    os.makedirs(output_dir, exist_ok=True)
-
     def preprocess_to_mnist_format(image):
         """Convert an image to MNIST format (28x28, centered, grayscale)."""
         if len(image.shape) > 2:
@@ -223,16 +219,32 @@ def process_image(image_path):
         canvas[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
         return canvas
 
+    # Define a margin (in pixels) from the edges where contours are not allowed
+    margin = 5  # Adjust this value as needed
+
     bounding_boxes = []
+    # Find contours
+    contours, _ = cv2.findContours(repaired_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    output_dir = "/Users/ryan/Desktop/cropped_digits"
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Get image dimensions
+    img_height, img_width = repaired_binary.shape
+
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
+        # Existing size filter
         if 2 < w < 50 and 17 < h < 60:
-            bounding_boxes.append((x, y, w, h))
+            # New edge restriction: Check if the bounding box touches or is within the margin
+            if (x > margin and y > margin and 
+                x + w < img_width - margin and 
+                y + h < img_height - margin):
+                bounding_boxes.append((x, y, w, h))
     bounding_boxes.sort(key=lambda box: box[0])
 
     results = []
     mnist_images = []
-    green_boxes_img = cv2.cvtColor(cleaned_binary, cv2.COLOR_GRAY2BGR)
+    green_boxes_img = cv2.cvtColor(cleaned_binary.copy(), cv2.COLOR_GRAY2BGR)  # Create a copy for green boxes
 
     for i, (x, y, w, h) in enumerate(bounding_boxes):
         digit_roi = cleaned_binary[y:y+h, x:x+w]
@@ -243,7 +255,7 @@ def process_image(image_path):
         prediction = classify_image(digit_filename)
         if prediction is not None:
             results.append(prediction)
-        cv2.rectangle(cleaned_binary, (x, y), (x + w, y + h), (0, 0, 0), 1)
+        # Draw green bounding boxes only on the green_boxes_img (not on cleaned_binary)
         cv2.rectangle(green_boxes_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
         os.remove(digit_filename)
 
@@ -388,6 +400,38 @@ def show_recognition_results(results):
         text_area.insert(tk.END, result + "\n")
     text_area.configure(state="disabled")
 
+def download_mnist_images(debug_data, parent_window, file_path=None):
+    """Prompt user to select a folder and save MNIST-formatted images with unique filenames."""
+    if 'mnist_images' not in debug_data or not debug_data['mnist_images']:
+        messagebox.showinfo("Download Error", "No MNIST-formatted images available to download.")
+        return
+    
+    # Prompt user to select a folder
+    save_dir = filedialog.askdirectory(
+        title="Select Folder to Save MNIST Images",
+        parent=parent_window
+    )
+    
+    if not save_dir:
+        return  # User canceled the dialog
+    
+    try:
+        # Generate a timestamp for uniqueness
+        timestamp = time.strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
+        
+        # Extract the base filename of the source PDF (without extension) for uniqueness
+        pdf_basename = os.path.splitext(os.path.basename(file_path))[0] if file_path else "unknown"
+        
+        # Save each MNIST-formatted image with a unique filename
+        for i, mnist_img in enumerate(debug_data['mnist_images']):
+            mnist_img_pil = Image.fromarray(mnist_img)
+            # Create a unique filename using PDF basename, timestamp, and digit index
+            filename = os.path.join(save_dir, f"mnist_digit_{pdf_basename}_{timestamp}_{i+1}.png")
+            mnist_img_pil.save(filename)
+        messagebox.showinfo("Download Complete", f"MNIST images saved successfully to:\n{save_dir}")
+    except Exception as e:
+        messagebox.showerror("Download Error", f"Failed to save MNIST images: {e}")
+
 def show_debug_window(file_path=None):
     """Show a debug window with processing details."""
     if not file_path:
@@ -486,11 +530,29 @@ def show_debug_window(file_path=None):
     
     # MNIST-preprocessed Images
     if 'mnist_images' in debug_data and debug_data['mnist_images']:
+        # Frame to hold the label and download button
+        mnist_title_frame = tk.Frame(scrollable_frame)
+        mnist_title_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        
         tk.Label(
-            scrollable_frame, 
+            mnist_title_frame, 
             text="MNIST-Formatted Images (Used for Classification):", 
             font=("Arial", 12)
-        ).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # Download button
+        download_btn = tk.Button(
+            mnist_title_frame, 
+            text="Download", 
+            command=lambda: download_mnist_images(debug_data, debug_window, file_path),
+            width=10,
+            height=1,
+            bg="#ffffff",
+            fg="black",
+            font=("Arial", 10, "bold")
+        )
+        download_btn.pack(side=tk.LEFT, padx=5)
+        
         row += 1
         
         # Create a frame for MNIST images to display them horizontally
@@ -519,7 +581,7 @@ def show_debug_window(file_path=None):
                 ).pack()
         
         row += 1
-    
+
     # Close button
     tk.Button(
         scrollable_frame, 
