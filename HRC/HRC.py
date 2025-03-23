@@ -9,10 +9,10 @@ import numpy as np
 import time
 import os
 
-# Define the model architecture (same as HRC.py)
-class Net(torch.nn.Module):
+# Define the digit classification model architecture (10 classes: 0-9)
+class DigitNet(torch.nn.Module):
     def __init__(self):
-        super(Net, self).__init__()
+        super(DigitNet, self).__init__()
         self.conv1 = torch.nn.Conv2d(1, 64, 3, 1)
         self.conv2 = torch.nn.Conv2d(64, 128, 3, 1)
         self.conv3 = torch.nn.Conv2d(128, 256, 3, 1)
@@ -42,14 +42,57 @@ class Net(torch.nn.Module):
         output = torch.nn.functional.log_softmax(x, dim=1)
         return output
 
-# Load the pre-trained model
-model = Net()
-model_file = "/Users/ryan/Desktop/DL/FYP/Combined_Model_seed_14598/combined_cnn_epoch:9_test-accuracy:99.5481_test-loss:0.0128.pt"
+# Define the binary classification model architecture (2 classes: digit or letter)
+class BinaryNet(torch.nn.Module):
+    def __init__(self):
+        super(BinaryNet, self).__init__()
+        self.conv1 = torch.nn.Conv2d(1, 64, 3, 1)
+        self.conv2 = torch.nn.Conv2d(64, 128, 3, 1)
+        self.conv3 = torch.nn.Conv2d(128, 256, 3, 1)
+        self.dropout1 = torch.nn.Dropout(0.25)
+        self.dropout2 = torch.nn.Dropout(0.4)
+        self.fc1 = torch.nn.Linear(256 * 5 * 5, 512)
+        self.fc2 = torch.nn.Linear(512, 256)
+        self.fc3 = torch.nn.Linear(256, 2)  # 2 outputs: digit (0) or letter (1)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = torch.nn.functional.relu(x)
+        x = self.conv2(x)
+        x = torch.nn.functional.relu(x)
+        x = torch.nn.functional.max_pool2d(x, 2)
+        x = self.conv3(x)
+        x = torch.nn.functional.relu(x)
+        x = torch.nn.functional.max_pool2d(x, 2)
+        x = self.dropout1(x)
+        x = torch.flatten(x, 1)
+        x = self.fc1(x)
+        x = torch.nn.functional.relu(x)
+        x = self.dropout2(x)
+        x = self.fc2(x)
+        x = torch.nn.functional.relu(x)
+        x = self.fc3(x)
+        output = torch.nn.functional.log_softmax(x, dim=1)
+        return output
+
+# Load the pre-trained digit classification model
+digit_model = DigitNet()
+digit_model_file = "/Users/ryan/Desktop/DL/FYP/Combined_Model_seed_14598/combined_cnn_epoch:9_test-accuracy:99.5481_test-loss:0.0128.pt"
 try:
-    model.load_state_dict(torch.load(model_file, map_location=torch.device('cpu')))
-    model.eval()
+    digit_model.load_state_dict(torch.load(digit_model_file, map_location=torch.device('cpu')))
+    digit_model.eval()
 except Exception as e:
-    print(f"Error loading model: {e}")
+    print(f"Error loading digit model: {e}")
+    exit()
+
+# Load the pre-trained binary classification model
+binary_model = BinaryNet()
+binary_model_file = "/Users/ryan/Desktop/DL/FYP/Binary_Model_seed_67675/binary_cnn_epoch:54_test-accuracy:99.9306_test-loss:0.0046.pt"  # Replace with your actual binary model path
+try:
+    binary_model.load_state_dict(torch.load(binary_model_file, map_location=torch.device('cpu')))
+    binary_model.eval()
+except Exception as e:
+    print(f"Error loading binary model: {e}")
     exit()
 
 # Image transformation for MNIST compatibility
@@ -61,17 +104,22 @@ transform = transforms.Compose([
 ])
 
 def classify_image(image_path):
-    """Classify a single MNIST-formatted image."""
+    """Classify an image with both digit and binary models."""
     try:
         image = Image.open(image_path).convert("L")
-        image = transform(image).unsqueeze(0)
+        image_tensor = transform(image).unsqueeze(0)
         with torch.no_grad():
-            output = model(image)
-            prediction = output.argmax(dim=1, keepdim=True).item()
-        return prediction
+            # Digit classification
+            digit_output = digit_model(image_tensor)
+            digit_pred = digit_output.argmax(dim=1, keepdim=True).item()
+            # Binary classification
+            binary_output = binary_model(image_tensor)
+            binary_pred = binary_output.argmax(dim=1, keepdim=True).item()
+            binary_label = "Digit" if binary_pred == 0 else "Letter"
+        return digit_pred, binary_label
     except Exception as e:
         print(f"Error processing image: {e}")
-        return None
+        return None, None
 
 def load_pdf():
     """Load and display multiple one-page PDF files."""
@@ -130,7 +178,6 @@ def display_image(image):
 
 def start_crop(event):
     global start_x, start_y, rect_id
-    # Remove the existing bounding box if it exists
     if rect_id is not None:
         canvas.delete(rect_id)
         rect_id = None
@@ -161,14 +208,12 @@ def finish_crop(event):
         x2_orig = int(x2 / image_scale)
         y2_orig = int(y2 / image_scale)
         crop_coords = (x1_orig, y1_orig, x2_orig, y2_orig)
-        
-        # Show a toast-like message
         status_label.config(text="Selection complete. Ready to classify.")
     except Exception as e:
         messagebox.showerror("Error", f"Failed to calculate crop coordinates: {e}")
 
 def process_image(image_path):
-    """Process the image, detect digits, crop to MNIST format, and classify them."""
+    """Process the image, detect characters, crop to MNIST format, and classify them."""
     img = cv2.imread(image_path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -196,6 +241,10 @@ def process_image(image_path):
     repair_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
     repaired_binary = cv2.dilate(cleaned_binary, repair_kernel, iterations=1)
 
+    # Additional dilation to connect disjointed parts
+    connect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    connected_binary = cv2.dilate(repaired_binary, connect_kernel, iterations=2)
+
     def preprocess_to_mnist_format(image):
         """Convert an image to MNIST format (28x28, centered, grayscale)."""
         if len(image.shape) > 2:
@@ -205,10 +254,10 @@ def process_image(image_path):
         if coords is None:
             return np.zeros((28, 28), dtype=np.uint8)
         x, y, w, h = cv2.boundingRect(coords)
+        if w == 0 or h == 0:
+            return np.zeros((28, 28), dtype=np.uint8)
         digit = image[y:y+h, x:x+w]
         max_dim = max(w, h)
-        if max_dim == 0:
-            return np.zeros((28, 28), dtype=np.uint8)
         scale = 20.0 / max_dim
         new_w = int(w * scale)
         new_h = int(h * scale)
@@ -219,47 +268,77 @@ def process_image(image_path):
         canvas[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
         return canvas
 
-    # Define a margin (in pixels) from the edges where contours are not allowed
-    margin = 5  # Adjust this value as needed
-
-    bounding_boxes = []
-    # Find contours
-    contours, _ = cv2.findContours(repaired_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    margin = 5
+    contours, _ = cv2.findContours(connected_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     output_dir = "/Users/ryan/Desktop/cropped_digits"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Get image dimensions
     img_height, img_width = repaired_binary.shape
 
+    def merge_nearby_contours(contours, distance_threshold=10):
+        bounding_boxes = [cv2.boundingRect(c) for c in contours]
+        merged_boxes = []
+        used = [False] * len(bounding_boxes)
+
+        for i in range(len(bounding_boxes)):
+            if used[i]:
+                continue
+            x1, y1, w1, h1 = bounding_boxes[i]
+            merged_xmin = x1
+            merged_ymin = y1
+            merged_xmax = x1 + w1
+            merged_ymax = y1 + h1
+            used[i] = True
+
+            for j in range(i + 1, len(bounding_boxes)):
+                if used[j]:
+                    continue
+                x2, y2, w2, h2 = bounding_boxes[j]
+                dx = min(abs(x1 + w1 - x2), abs(x2 + w2 - x1)) if x1 < x2 + w2 and x2 < x1 + w1 else abs(x1 - x2)
+                dy = min(abs(y1 + h1 - y2), abs(y2 + h2 - y1)) if y1 < y2 + h2 and y2 < y1 + h1 else abs(y1 - y2)
+                distance = max(dx, dy)
+                
+                if distance < distance_threshold:
+                    merged_xmin = min(merged_xmin, x2)
+                    merged_ymin = min(merged_ymin, y2)
+                    merged_xmax = max(merged_xmax, x2 + w2)
+                    merged_ymax = max(merged_ymax, y2 + h2)
+                    used[j] = True
+
+            merged_boxes.append((merged_xmin, merged_ymin, merged_xmax - merged_xmin, merged_ymax - merged_ymin))
+        return merged_boxes
+
+    initial_boxes = []
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
-        # Existing size filter
-        if 2 < w < 50 and 17 < h < 60:
-            # New edge restriction: Check if the bounding box touches or is within the margin
+        if 2 < w < 100 and 17 < h < 100:
             if (x > margin and y > margin and 
                 x + w < img_width - margin and 
                 y + h < img_height - margin):
-                bounding_boxes.append((x, y, w, h))
+                initial_boxes.append(contour)
+
+    bounding_boxes = merge_nearby_contours(initial_boxes, distance_threshold=10)
     bounding_boxes.sort(key=lambda box: box[0])
 
-    results = []
+    digit_results = []
+    binary_results = []
     mnist_images = []
-    green_boxes_img = cv2.cvtColor(cleaned_binary.copy(), cv2.COLOR_GRAY2BGR)  # Create a copy for green boxes
+    green_boxes_img = cv2.cvtColor(cleaned_binary.copy(), cv2.COLOR_GRAY2BGR)
 
     for i, (x, y, w, h) in enumerate(bounding_boxes):
         digit_roi = cleaned_binary[y:y+h, x:x+w]
         mnist_digit = preprocess_to_mnist_format(digit_roi)
         mnist_images.append(mnist_digit)
-        digit_filename = os.path.join(output_dir, f"digit_{i+1}_mnist.png")
+        digit_filename = os.path.join(output_dir, f"char_{i+1}_mnist.png")
         cv2.imwrite(digit_filename, mnist_digit)
-        prediction = classify_image(digit_filename)
-        if prediction is not None:
-            results.append(prediction)
-        # Draw green bounding boxes only on the green_boxes_img (not on cleaned_binary)
+        digit_pred, binary_label = classify_image(digit_filename)
+        if digit_pred is not None:
+            digit_results.append(str(digit_pred))
+            binary_results.append(binary_label)
         cv2.rectangle(green_boxes_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
         os.remove(digit_filename)
 
-    return results, cleaned_binary, mnist_images, green_boxes_img
+    return digit_results, cleaned_binary, mnist_images, green_boxes_img, binary_results
 
 def classify():
     """Classify the cropped region of the PDF image and store debug images."""
@@ -274,13 +353,11 @@ def classify():
     status_label.config(text="Processing... Please wait.")
     root.update()
 
-    # Remove the existing bounding box if it exists
     if rect_id is not None:
         canvas.delete(rect_id)
         rect_id = None
 
     recognition_results = []
-    # Removed the check for processing only the current PDF; always process all PDFs
     file_paths = pdf_files
     
     for file_path in file_paths:
@@ -299,21 +376,23 @@ def classify():
                 'cropped': cropped_image,
                 'processed': None,
                 'mnist_images': None,
-                'green_boxes_img': None
+                'green_boxes_img': None,
+                'binary_results': None  # Add binary results to debug entry
             }
             
-            results, processed_img, mnist_images, green_boxes_img = process_image(temp_image_path)
+            digit_results, processed_img, mnist_images, green_boxes_img, binary_results = process_image(temp_image_path)
             processed_img_pil = Image.fromarray(processed_img)
             green_boxes_img_pil = Image.fromarray(green_boxes_img)
 
             debug_entry.update({
                 'processed': processed_img_pil,
                 'mnist_images': mnist_images,
-                'results': ''.join(map(str, results)),
-                'green_boxes_img': green_boxes_img_pil
+                'results': ''.join(digit_results),
+                'green_boxes_img': green_boxes_img_pil,
+                'binary_results': binary_results
             })
             
-            recognition_results.append(f"{os.path.basename(file_path)}: {''.join(map(str, results))}")
+            recognition_results.append(f"{os.path.basename(file_path)}: {''.join(digit_results)}")
             
             debug_images[file_path] = debug_entry
             
@@ -322,7 +401,6 @@ def classify():
         except Exception as e:
             recognition_results.append(f"{os.path.basename(file_path)}: Error processing file - {e}")
 
-    # Apply replacement if enabled
     if replace_var.get() and user_entry_var.get().strip():
         user_input = user_entry_var.get().strip()
         modified_results = []
@@ -343,7 +421,6 @@ def classify():
                 modified_results.append(result)
         recognition_results = modified_results
 
-        # Update the debug_data with the modified results
         for file_path in file_paths:
             if file_path in debug_images:
                 file_index = file_paths.index(file_path)
@@ -359,11 +436,9 @@ def show_recognition_results(results):
     result_window.title("Recognition Results")
     result_window.geometry("600x400")
     
-    # Create a frame for the buttons and PDF selection
     control_frame = tk.Frame(result_window)
     control_frame.pack(fill=tk.X, padx=10, pady=5)
     
-    # PDF selection dropdown
     pdf_label = tk.Label(control_frame, text="Select PDF for Debug:")
     pdf_label.pack(side=tk.LEFT, padx=5)
     
@@ -371,29 +446,20 @@ def show_recognition_results(results):
     pdf_debug_combobox.pack(side=tk.LEFT, padx=5)
     pdf_debug_combobox['values'] = [os.path.basename(path) for path in pdf_files]
     if pdf_files:
-        pdf_debug_combobox.current(pdf_combobox.current())  # Default to current PDF in main window
+        pdf_debug_combobox.current(pdf_combobox.current())
     
-    # Add debug button to result window
     def on_debug_select():
         selected_index = pdf_debug_combobox.current()
         if selected_index >= 0:
             show_debug_window(pdf_files[selected_index])
     
-    debug_btn = tk.Button(
-        control_frame, 
-        text="Show Debug Details", 
-        command=on_debug_select
-    )
+    debug_btn = tk.Button(control_frame, text="Show Debug Details", command=on_debug_select)
     debug_btn.pack(side=tk.LEFT, padx=5)
     
-    # Add close button
     close_btn = tk.Button(control_frame, text="Close", command=result_window.destroy)
     close_btn.pack(side=tk.RIGHT, padx=5)
     
-    # Text area for results
-    text_area = scrolledtext.ScrolledText(
-        result_window, wrap=tk.WORD, width=60, height=20, font=("Arial", 14)
-    )
+    text_area = scrolledtext.ScrolledText(result_window, wrap=tk.WORD, width=60, height=20, font=("Arial", 14))
     text_area.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
     
     for result in results:
@@ -401,52 +467,36 @@ def show_recognition_results(results):
     text_area.configure(state="disabled")
 
 def download_mnist_images(debug_data, parent_window, file_path=None):
-    """Prompt user to select a folder and save MNIST-formatted images with unique filenames."""
+    """Prompt user to save MNIST-formatted images with unique filenames."""
     if 'mnist_images' not in debug_data or not debug_data['mnist_images']:
         messagebox.showinfo("Download Error", "No MNIST-formatted images available to download.")
         return
     
-    # Prompt user to select a folder
-    save_dir = filedialog.askdirectory(
-        title="Select Folder to Save MNIST Images",
-        parent=parent_window
-    )
-    
+    save_dir = filedialog.askdirectory(title="Select Folder to Save MNIST Images", parent=parent_window)
     if not save_dir:
-        return  # User canceled the dialog
+        return
     
     try:
-        # Generate a timestamp for uniqueness
-        timestamp = time.strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
-        
-        # Extract the base filename of the source PDF (without extension) for uniqueness
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
         pdf_basename = os.path.splitext(os.path.basename(file_path))[0] if file_path else "unknown"
-        
-        # Save each MNIST-formatted image with a unique filename
         for i, mnist_img in enumerate(debug_data['mnist_images']):
             mnist_img_pil = Image.fromarray(mnist_img)
-            # Create a unique filename using PDF basename, timestamp, and digit index
-            filename = os.path.join(save_dir, f"mnist_digit_{pdf_basename}_{timestamp}_{i+1}.png")
+            filename = os.path.join(save_dir, f"mnist_char_{pdf_basename}_{timestamp}_{i+1}.png")
             mnist_img_pil.save(filename)
         messagebox.showinfo("Download Complete", f"MNIST images saved successfully to:\n{save_dir}")
     except Exception as e:
         messagebox.showerror("Download Error", f"Failed to save MNIST images: {e}")
 
 def show_debug_window(file_path=None):
-    """Show a debug window with processing details."""
-    if not file_path:
-        messagebox.showinfo("Debug Info", "No PDF file selected.")
-        return
-        
-    if file_path not in debug_images:
-        messagebox.showinfo("Debug Info", f"No debug information available for {os.path.basename(file_path)}.")
+    """Show a debug window with processing details including binary classification."""
+    if not file_path or file_path not in debug_images:
+        messagebox.showinfo("Debug Info", "No debug information available.")
         return
         
     debug_window = tk.Toplevel(root)
     debug_window.title(f"Debug Details - {os.path.basename(file_path)}")
     debug_window.geometry("800x600")
     
-    # Create a canvas with scrollbar
     main_frame = tk.Frame(debug_window)
     main_frame.pack(fill=tk.BOTH, expand=True)
     
@@ -468,7 +518,6 @@ def show_debug_window(file_path=None):
     debug_data = debug_images[file_path]
     row = 0
     
-    # Display recognition result
     if 'results' in debug_data:
         tk.Label(
             scrollable_frame, 
@@ -477,15 +526,9 @@ def show_debug_window(file_path=None):
         ).grid(row=row, column=0, columnspan=2, pady=10, sticky="w", padx=10)
         row += 1
     
-    # Cropped Image
     if 'cropped' in debug_data and debug_data['cropped']:
-        tk.Label(
-            scrollable_frame, 
-            text="Cropped Image:", 
-            font=("Arial", 12)
-        ).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        tk.Label(scrollable_frame, text="Cropped Image:", font=("Arial", 12)).grid(row=row, column=0, sticky="w", padx=10, pady=5)
         row += 1
-        
         img = debug_data['cropped'].copy()
         img.thumbnail((400, 400))
         tk_img = ImageTk.PhotoImage(img)
@@ -494,15 +537,9 @@ def show_debug_window(file_path=None):
         label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
         row += 1
     
-    # Processed Image
     if 'processed' in debug_data and debug_data['processed']:
-        tk.Label(
-            scrollable_frame, 
-            text="Processed Image (After Preprocessing):", 
-            font=("Arial", 12)
-        ).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        tk.Label(scrollable_frame, text="Processed Image (After Preprocessing):", font=("Arial", 12)).grid(row=row, column=0, sticky="w", padx=10, pady=5)
         row += 1
-        
         img = debug_data['processed'].copy()
         img.thumbnail((400, 400))
         tk_img = ImageTk.PhotoImage(img)
@@ -511,15 +548,9 @@ def show_debug_window(file_path=None):
         label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
         row += 1
     
-    # Green Bounding Boxes Image
     if 'green_boxes_img' in debug_data and debug_data['green_boxes_img']:
-        tk.Label(
-            scrollable_frame, 
-            text="Digit Detection (Green Bounding Boxes):", 
-            font=("Arial", 12)
-        ).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        tk.Label(scrollable_frame, text="Digit Detection (Green Bounding Boxes):", font=("Arial", 12)).grid(row=row, column=0, sticky="w", padx=10, pady=5)
         row += 1
-        
         img = debug_data['green_boxes_img'].copy()
         img.thumbnail((400, 400))
         tk_img = ImageTk.PhotoImage(img)
@@ -528,9 +559,7 @@ def show_debug_window(file_path=None):
         label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
         row += 1
     
-    # MNIST-preprocessed Images
     if 'mnist_images' in debug_data and debug_data['mnist_images']:
-        # Frame to hold the label and download button
         mnist_title_frame = tk.Frame(scrollable_frame)
         mnist_title_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
         
@@ -540,7 +569,6 @@ def show_debug_window(file_path=None):
             font=("Arial", 12)
         ).pack(side=tk.LEFT, padx=5)
         
-        # Download button
         download_btn = tk.Button(
             mnist_title_frame, 
             text="Download", 
@@ -555,13 +583,11 @@ def show_debug_window(file_path=None):
         
         row += 1
         
-        # Create a frame for MNIST images to display them horizontally
         mnist_frame = tk.Frame(scrollable_frame)
         mnist_frame.grid(row=row, column=0, padx=10, pady=5, sticky="w")
         
         for i, mnist_img in enumerate(debug_data['mnist_images']):
             mnist_img_pil = Image.fromarray(mnist_img)
-            # Make images larger for better visibility
             mnist_img_pil = mnist_img_pil.resize((80, 80), Image.NEAREST)
             tk_img = ImageTk.PhotoImage(mnist_img_pil)
             
@@ -572,7 +598,14 @@ def show_debug_window(file_path=None):
             label.image = tk_img
             label.pack()
             
-            # If we have results, show the predicted digit
+            # Display binary classification result above digit result
+            if 'binary_results' in debug_data and i < len(debug_data['binary_results']):
+                tk.Label(
+                    digit_frame, 
+                    text=f"{debug_data['binary_results'][i]}", 
+                    font=("Arial", 10, "bold"),
+                    fg="blue"  # Optional: color to distinguish binary result
+                ).pack()
             if 'results' in debug_data and i < len(debug_data['results']):
                 tk.Label(
                     digit_frame, 
@@ -582,14 +615,7 @@ def show_debug_window(file_path=None):
         
         row += 1
 
-    # Close button
-    tk.Button(
-        scrollable_frame, 
-        text="Close", 
-        command=debug_window.destroy, 
-        width=20, 
-        height=2
-    ).grid(row=row, column=0, pady=20)
+    tk.Button(scrollable_frame, text="Close", command=debug_window.destroy, width=20, height=2).grid(row=row, column=0, pady=20)
 
 def setup_canvas():
     """Configure the canvas when the window is resized."""
@@ -605,7 +631,6 @@ root = tk.Tk()
 root.title("New HRC - Handwritten Recognition")
 root.state('zoomed')
 
-# Apply a more modern theme if available
 try:
     style = ttk.Style()
     available_themes = style.theme_names()
@@ -628,25 +653,15 @@ pdf_files = []
 debug_images = {}
 canvas_offset_x = canvas_offset_y = 0
 
-# Create a main frame
 main_frame = tk.Frame(root)
 main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-# Top control panel
 control_frame = tk.Frame(main_frame)
 control_frame.pack(fill=tk.X, pady=10)
 
-# Upload button with icon
-upload_button = tk.Button(
-    control_frame, 
-    text="Upload PDFs", 
-    command=load_pdf,
-    width=15,
-    height=2
-)
+upload_button = tk.Button(control_frame, text="Upload PDFs", command=load_pdf, width=15, height=2)
 upload_button.grid(row=0, column=0, padx=5)
 
-# PDF selection dropdown
 pdf_label = tk.Label(control_frame, text="Select PDF:")
 pdf_label.grid(row=0, column=1, padx=5, pady=5, sticky="e")
 
@@ -654,13 +669,8 @@ pdf_combobox = ttk.Combobox(control_frame, width=40, state="readonly")
 pdf_combobox.grid(row=0, column=2, padx=5, pady=5, sticky="w")
 pdf_combobox.bind("<<ComboboxSelected>>", on_combobox_select)
 
-# Second row of controls
 replace_var = tk.BooleanVar(value=False)
-replace_check = tk.Checkbutton(
-    control_frame, 
-    text="Replace first digits with:", 
-    variable=replace_var
-)
+replace_check = tk.Checkbutton(control_frame, text="Replace first digits with:", variable=replace_var)
 replace_check.grid(row=1, column=0, padx=5, pady=5, sticky="e")
 
 user_entry_var = tk.StringVar()
@@ -674,7 +684,6 @@ user_entry = tk.Entry(
 )
 user_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
-# Classify button
 classify_button = tk.Button(
     control_frame, 
     text="Classify", 
@@ -687,7 +696,6 @@ classify_button = tk.Button(
 )
 classify_button.grid(row=1, column=2, padx=5, pady=5)
 
-# Status label
 status_label = tk.Label(
     control_frame, 
     text="Ready. Please load a PDF file.", 
@@ -696,16 +704,14 @@ status_label = tk.Label(
     relief=tk.SUNKEN,
     anchor=tk.W
 )
-status_label.grid(row=1, column=3, columnspan=1, padx=5, pady=5, sticky="ew")  # Adjusted columnspan
+status_label.grid(row=1, column=3, columnspan=1, padx=5, pady=5, sticky="ew")
 
-# Canvas for displaying PDF images with a border
 canvas_frame = tk.Frame(main_frame, bd=2, relief=tk.SUNKEN)
 canvas_frame.pack(fill=tk.BOTH, expand=True, pady=10)
 
 canvas = tk.Canvas(canvas_frame, bg="light gray")
 canvas.pack(fill=tk.BOTH, expand=True)
 
-# Instructions label
 instructions = tk.Label(
     main_frame, 
     text="Instructions: Upload a PDF, select an area with digits by drawing a rectangle, then click 'Classify'",
@@ -714,7 +720,6 @@ instructions = tk.Label(
 )
 instructions.pack(pady=5, anchor=tk.W)
 
-# Event bindings
 canvas.bind("<ButtonPress-1>", start_crop)
 canvas.bind("<B1-Motion>", update_crop)
 canvas.bind("<ButtonRelease-1>", finish_crop)
