@@ -6,7 +6,9 @@ The topic for this project is Deep Learning for Handwritten Characters recogniti
 >What information we need to idenfly?
 1. Course code
 2. Student id
-3. Candidate code
+3. Exam number
+
+![exam_paper](img/12531103.pdf)
 
 # Objectives
 1. Model accuracy >=95%
