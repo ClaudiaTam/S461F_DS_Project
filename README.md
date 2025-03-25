@@ -1,9 +1,22 @@
 # S461F Data Science Project
-# Table of Contents
-.
-.
-.
-## Introduction
-The topic for this project is Deep Learning for Handwritten Characters recognition. Our purpose is to create the models that can recognise the English sentences and digits numbers in different scenario.
-For example, the model can extract the exam paper information, such as course numbers, student name and student id.
+
+# Introduction
+The topic for this project is Deep Learning for Handwritten Characters recognition. 
+<br>Our purpose is to create a model that can identfly the information of school exam papers.<br/>
+>What information we need to idenfly?
+1. Course code
+2. Student id
+3. Candidate code
+
+# Objectives
+1. Model accuracy >=95%
+2. Identify the information
+3. The model can recognize the English letters(A-Z) and digits(0-9)
+4. Developed an application
+5. Export the result to excel
+
+# Method
+
+
+
 
