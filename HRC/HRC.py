@@ -42,6 +42,39 @@ class DigitNet(torch.nn.Module):
         output = torch.nn.functional.log_softmax(x, dim=1)
         return output
 
+# Define the letter classification model architecture (26 classes: A-Z)
+class LetterNet(torch.nn.Module):
+    def __init__(self):
+        super(LetterNet, self).__init__()
+        self.conv1 = torch.nn.Conv2d(1, 64, 3, 1)
+        self.conv2 = torch.nn.Conv2d(64, 128, 3, 1)
+        self.conv3 = torch.nn.Conv2d(128, 256, 3, 1)
+        self.dropout1 = torch.nn.Dropout(0.25)
+        self.dropout2 = torch.nn.Dropout(0.4)
+        self.fc1 = torch.nn.Linear(256 * 5 * 5, 512)
+        self.fc2 = torch.nn.Linear(512, 256)
+        self.fc3 = torch.nn.Linear(256, 37)  # 26 classes for letters A-Z
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = torch.nn.functional.relu(x)
+        x = self.conv2(x)
+        x = torch.nn.functional.relu(x)
+        x = torch.nn.functional.max_pool2d(x, 2)
+        x = self.conv3(x)
+        x = torch.nn.functional.relu(x)
+        x = torch.nn.functional.max_pool2d(x, 2)
+        x = self.dropout1(x)
+        x = torch.flatten(x, 1)
+        x = self.fc1(x)
+        x = torch.nn.functional.relu(x)
+        x = self.dropout2(x)
+        x = self.fc2(x)
+        x = torch.nn.functional.relu(x)
+        x = self.fc3(x)
+        output = torch.nn.functional.log_softmax(x, dim=1)
+        return output
+
 # Define the binary classification model architecture (2 classes: digit or letter)
 class BinaryNet(torch.nn.Module):
     def __init__(self):
@@ -85,6 +118,16 @@ except Exception as e:
     print(f"Error loading digit model: {e}")
     exit()
 
+# Load the pre-trained letter classification model
+letter_model = LetterNet()
+letter_model_file = "/Users/ryan/Desktop/DL/FYP/Letters_Model_seed_68322/letters_cnn_epoch:8_test-accuracy:94.8397_test-loss:0.1622.pt"  # Replace with the actual path to your trained letter model
+try:
+    letter_model.load_state_dict(torch.load(letter_model_file, map_location=torch.device('cpu')))
+    letter_model.eval()
+except Exception as e:
+    print(f"Error loading letter model: {e}")
+    exit()  
+
 # Load the pre-trained binary classification model
 binary_model = BinaryNet()
 binary_model_file = "/Users/ryan/Desktop/DL/FYP/Binary_Model_seed_67675/binary_cnn_epoch:54_test-accuracy:99.9306_test-loss:0.0046.pt"  # Replace with your actual binary model path
@@ -104,19 +147,27 @@ transform = transforms.Compose([
 ])
 
 def classify_image(image_path):
-    """Classify an image with both digit and binary models."""
+    """Classify an image with binary model first, then digit or letter model."""
     try:
         image = Image.open(image_path).convert("L")
         image_tensor = transform(image).unsqueeze(0)
         with torch.no_grad():
-            # Digit classification
-            digit_output = digit_model(image_tensor)
-            digit_pred = digit_output.argmax(dim=1, keepdim=True).item()
-            # Binary classification
+            # Binary classification first
             binary_output = binary_model(image_tensor)
             binary_pred = binary_output.argmax(dim=1, keepdim=True).item()
             binary_label = "Digit" if binary_pred == 0 else "Letter"
-        return digit_pred, binary_label
+
+            # Route to appropriate model based on binary result
+            if binary_pred == 0:  # Digit
+                digit_output = digit_model(image_tensor)
+                pred = digit_output.argmax(dim=1, keepdim=True).item()
+                result = str(pred)
+            else:  # Letter
+                letter_output = letter_model(image_tensor)
+                pred = letter_output.argmax(dim=1, keepdim=True).item()
+                result = chr(65 + pred)  # Convert 0-25 to A-Z
+
+        return result, binary_label
     except Exception as e:
         print(f"Error processing image: {e}")
         return None, None
@@ -331,9 +382,9 @@ def process_image(image_path):
         mnist_images.append(mnist_digit)
         digit_filename = os.path.join(output_dir, f"char_{i+1}_mnist.png")
         cv2.imwrite(digit_filename, mnist_digit)
-        digit_pred, binary_label = classify_image(digit_filename)
-        if digit_pred is not None:
-            digit_results.append(str(digit_pred))
+        result, binary_label = classify_image(digit_filename)
+        if result is not None:
+            digit_results.append(result)  # Could be digit (0-9) or letter (A-Z)
             binary_results.append(binary_label)
         cv2.rectangle(green_boxes_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
         os.remove(digit_filename)
@@ -598,18 +649,19 @@ def show_debug_window(file_path=None):
             label.image = tk_img
             label.pack()
             
-            # Display binary classification result above digit result
+            # Display binary classification result
             if 'binary_results' in debug_data and i < len(debug_data['binary_results']):
                 tk.Label(
                     digit_frame, 
-                    text=f"{debug_data['binary_results'][i]}", 
+                    text=f"Type: {debug_data['binary_results'][i]}", 
                     font=("Arial", 10, "bold"),
-                    fg="blue"  # Optional: color to distinguish binary result
+                    fg="blue"
                 ).pack()
+            # Display recognition result
             if 'results' in debug_data and i < len(debug_data['results']):
                 tk.Label(
                     digit_frame, 
-                    text=f"{debug_data['results'][i]}", 
+                    text=f"Result: {debug_data['results'][i]}", 
                     font=("Arial", 10, "bold")
                 ).pack()
         
