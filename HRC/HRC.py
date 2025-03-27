@@ -4,6 +4,7 @@ from PIL import Image, ImageTk
 from pdf2image import convert_from_path
 import torch
 from torchvision import transforms
+import openpyxl
 import cv2
 import numpy as np
 import time
@@ -481,11 +482,45 @@ def classify():
     status_label.config(text="Classification complete!")
     show_recognition_results(recognition_results)
 
+def export_to_excel(results, parent_window):
+    """Export recognition results to an Excel file."""
+    save_dir = filedialog.askdirectory(title="Select Folder to Save Excel File", parent=parent_window)
+    if not save_dir:
+        return
+    
+    try:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Recognition Results"
+        
+        # Add headers
+        ws['A1'] = "File Name"
+        ws['B1'] = "Recognized Text"
+        
+        # Add data
+        for row, result in enumerate(results, start=2):
+            parts = result.split(': ', 1)
+            if len(parts) == 2:
+                filename, text = parts
+                ws[f'A{row}'] = filename
+                ws[f'B{row}'] = text
+            else:
+                ws[f'A{row}'] = "Error"
+                ws[f'B{row}'] = result
+        
+        # Save the file with a timestamp to avoid overwriting
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = os.path.join(save_dir, f"recognition_results_{timestamp}.xlsx")
+        wb.save(filename)
+        messagebox.showinfo("Export Complete", f"Results exported successfully to:\n{filename}")
+    except Exception as e:
+        messagebox.showerror("Export Error", f"Failed to export to Excel: {e}")
+
 def show_recognition_results(results):
-    """Display recognition results in a scrollable text window."""
+    """Display recognition results in a scrollable text window with an output button."""
     result_window = tk.Toplevel(root)
     result_window.title("Recognition Results")
-    result_window.geometry("600x400")
+    result_window.geometry("1200x400")
     
     control_frame = tk.Frame(result_window)
     control_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -506,6 +541,14 @@ def show_recognition_results(results):
     
     debug_btn = tk.Button(control_frame, text="Show Debug Details", command=on_debug_select)
     debug_btn.pack(side=tk.LEFT, padx=5)
+
+    # Add the Output button
+    output_btn = tk.Button(
+        control_frame, 
+        text="Output to Excel", 
+        command=lambda: export_to_excel(results, result_window)
+    )
+    output_btn.pack(side=tk.LEFT, padx=5)
     
     close_btn = tk.Button(control_frame, text="Close", command=result_window.destroy)
     close_btn.pack(side=tk.RIGHT, padx=5)
@@ -516,6 +559,26 @@ def show_recognition_results(results):
     for result in results:
         text_area.insert(tk.END, result + "\n")
     text_area.configure(state="disabled")
+
+# Add this new helper function above `show_debug_window`
+def download_image(image, filename_prefix, parent_window, file_path=None):
+    """Prompt user to save a single image with a unique filename."""
+    if not image:
+        messagebox.showinfo("Download Error", f"No {filename_prefix} image available to download.")
+        return
+    
+    save_dir = filedialog.askdirectory(title=f"Select Folder to Save {filename_prefix} Image", parent=parent_window)
+    if not save_dir:
+        return
+    
+    try:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        pdf_basename = os.path.splitext(os.path.basename(file_path))[0] if file_path else "unknown"
+        filename = os.path.join(save_dir, f"{filename_prefix}_{pdf_basename}_{timestamp}.png")
+        image.save(filename)
+        messagebox.showinfo("Download Complete", f"{filename_prefix} image saved successfully to:\n{save_dir}")
+    except Exception as e:
+        messagebox.showerror("Download Error", f"Failed to save {filename_prefix} image: {e}")
 
 def download_mnist_images(debug_data, parent_window, file_path=None):
     """Prompt user to save MNIST-formatted images with unique filenames."""
@@ -538,8 +601,9 @@ def download_mnist_images(debug_data, parent_window, file_path=None):
     except Exception as e:
         messagebox.showerror("Download Error", f"Failed to save MNIST images: {e}")
 
+# Replace the existing `show_debug_window` function with this updated version
 def show_debug_window(file_path=None):
-    """Show a debug window with processing details including binary classification."""
+    """Show a debug window with processing details including binary classification and additional download buttons."""
     if not file_path or file_path not in debug_images:
         messagebox.showinfo("Debug Info", "No debug information available.")
         return
@@ -577,9 +641,31 @@ def show_debug_window(file_path=None):
         ).grid(row=row, column=0, columnspan=2, pady=10, sticky="w", padx=10)
         row += 1
     
+    # Cropped Image Section
     if 'cropped' in debug_data and debug_data['cropped']:
-        tk.Label(scrollable_frame, text="Cropped Image:", font=("Arial", 12)).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        cropped_frame = tk.Frame(scrollable_frame)
+        cropped_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        
+        tk.Label(
+            cropped_frame, 
+            text="Cropped Image:", 
+            font=("Arial", 12)
+        ).pack(side=tk.LEFT, padx=5)
+        
+        download_cropped_btn = tk.Button(
+            cropped_frame, 
+            text="Download", 
+            command=lambda: download_image(debug_data['cropped'], "cropped", debug_window, file_path),
+            width=10,
+            height=1,
+            bg="#ffffff",
+            fg="black",
+            font=("Arial", 10, "bold")
+        )
+        download_cropped_btn.pack(side=tk.LEFT, padx=5)
+        
         row += 1
+        
         img = debug_data['cropped'].copy()
         img.thumbnail((400, 400))
         tk_img = ImageTk.PhotoImage(img)
@@ -588,9 +674,31 @@ def show_debug_window(file_path=None):
         label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
         row += 1
     
+    # Processed Image Section
     if 'processed' in debug_data and debug_data['processed']:
-        tk.Label(scrollable_frame, text="Processed Image (After Preprocessing):", font=("Arial", 12)).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        processed_frame = tk.Frame(scrollable_frame)
+        processed_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        
+        tk.Label(
+            processed_frame, 
+            text="Processed Image (After Preprocessing):", 
+            font=("Arial", 12)
+        ).pack(side=tk.LEFT, padx=5)
+        
+        download_processed_btn = tk.Button(
+            processed_frame, 
+            text="Download", 
+            command=lambda: download_image(debug_data['processed'], "processed", debug_window, file_path),
+            width=10,
+            height=1,
+            bg="#ffffff",
+            fg="black",
+            font=("Arial", 10, "bold")
+        )
+        download_processed_btn.pack(side=tk.LEFT, padx=5)
+        
         row += 1
+        
         img = debug_data['processed'].copy()
         img.thumbnail((400, 400))
         tk_img = ImageTk.PhotoImage(img)
@@ -599,9 +707,31 @@ def show_debug_window(file_path=None):
         label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
         row += 1
     
+    # Digit Detection Section
     if 'green_boxes_img' in debug_data and debug_data['green_boxes_img']:
-        tk.Label(scrollable_frame, text="Digit Detection (Green Bounding Boxes):", font=("Arial", 12)).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        detection_frame = tk.Frame(scrollable_frame)
+        detection_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        
+        tk.Label(
+            detection_frame, 
+            text="Digit Detection (Green Bounding Boxes):", 
+            font=("Arial", 12)
+        ).pack(side=tk.LEFT, padx=5)
+        
+        download_detection_btn = tk.Button(
+            detection_frame, 
+            text="Download", 
+            command=lambda: download_image(debug_data['green_boxes_img'], "digit_detection", debug_window, file_path),
+            width=10,
+            height=1,
+            bg="#ffffff",
+            fg="black",
+            font=("Arial", 10, "bold")
+        )
+        download_detection_btn.pack(side=tk.LEFT, padx=5)
+        
         row += 1
+        
         img = debug_data['green_boxes_img'].copy()
         img.thumbnail((400, 400))
         tk_img = ImageTk.PhotoImage(img)
@@ -610,6 +740,7 @@ def show_debug_window(file_path=None):
         label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
         row += 1
     
+    # MNIST Images Section (unchanged except for row increment)
     if 'mnist_images' in debug_data and debug_data['mnist_images']:
         mnist_title_frame = tk.Frame(scrollable_frame)
         mnist_title_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
@@ -649,7 +780,6 @@ def show_debug_window(file_path=None):
             label.image = tk_img
             label.pack()
             
-            # Display binary classification result
             if 'binary_results' in debug_data and i < len(debug_data['binary_results']):
                 tk.Label(
                     digit_frame, 
@@ -657,7 +787,6 @@ def show_debug_window(file_path=None):
                     font=("Arial", 10, "bold"),
                     fg="blue"
                 ).pack()
-            # Display recognition result
             if 'results' in debug_data and i < len(debug_data['results']):
                 tk.Label(
                     digit_frame, 
