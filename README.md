@@ -9,9 +9,9 @@ The topic for this project is Deep Learning for Handwritten Characters recogniti
 3. Exam number
 
 ![Exam_Paper](img/12531103.pdf)
-![Course Code](crop1/1.png)
-![Exam Number](crop2/1.PNG)
-![Student Number](crop2/2.PNG)
+![Course Code](crop_img/crop1/1.PNG)
+![Exam Number](crop_img/crop2/1.PNG)
+![Student Number](crop_img/crop2/2.PNG)
 
 # Objectives
 1. Model accuracy >=95%
