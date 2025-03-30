@@ -2,13 +2,13 @@
 
 # Introduction
 The topic for this project is Deep Learning for Handwritten Characters recognition. 
-<br>Our purpose is to create a model that can identfly the information of school exam papers.<br/>
->What information we need to idenfly?
-1. Course code
-2. Student id
-3. Exam number
+<br>Our purpose is to create a model that can recognize the information of school exam papers.<br/>
+>What information we need to identify ?
+1. Course Code
+2. Student Number
+3. Exam Number
 
-![Exam_Paper](img/12531103.pdf)
+![Exam_Paper](12531103-1.png)
 ![Course Code](crop_img/crop1/1.PNG)
 ![Exam Number](crop_img/crop2/1.PNG)
 ![Student Number](crop_img/crop2/2.PNG)
