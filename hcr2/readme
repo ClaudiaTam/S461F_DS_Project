@@ -1,1 +1,28 @@
-no
+# what changes?
+1. No binary classification for letters and digits
+2. only one segmentation -- using distance_threshold, 5 for exam/student number, 10 for course code
+3. interface have some change
+4. use this model 'emnist_cnn_epoch_14_test-accuracy_93.1792_test-loss_0.1858.pt'.
+5. remember change the dir in 'image_processing.py' and 'classification.py'
+
+# Overview the code
+1. image_processing.py
+   - Converts an input image to grayscale, enhances contrast with CLAHE, and applies adaptive thresholding to create a binary image.
+   - Removes lines and noise, then detects character contours using OpenCV.
+   - Resizes detected characters to the MNIST format (28x28 pixels) for classification.
+
+2. classification.py
+   - Uses a pre-trained convolutional neural network (CNN) model (CharNet) to classify characters.
+   - The model outputs 36 classes (0-9 digits and A-Z letters), covering a wide range of possible characters.
+   - Applies transformations (e.g., normalization) to match the MNIST dataset’s format. (?)
+   (if u already train the model, does we need to apply the transformation?
+
+3. main.py
+   - Allows users to upload PDFs, select regions of interest (ROIs) for course code or exam/student number, and classify the text within those regions.
+   - Supports debugging and exporting results to Excel.
+
+4. model.py
+  - A CNN with three convolutional layers, dropout for regularization, and fully connected layers, trained to recognize 36 classes
+
+5. utils.py
+  - Converts PDFs to images using pdf2image.
