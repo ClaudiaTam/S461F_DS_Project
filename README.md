@@ -8,14 +8,19 @@ The topic for this project is Deep Learning for Handwritten Characters recogniti
 2. Student id
 3. Exam number
 
-![exam_paper](img/12531103.pdf)
+![Exam_Paper](img/12531103.pdf)
+![Course Code](crop1/1.png)
+![Exam Number](crop2/1.PNG)
+![Student Number](crop2/2.PNG)
 
 # Objectives
 1. Model accuracy >=95%
-2. Identify the information
+2. Identify the information(e.g., Course code, Exam number, Student number)
 3. The model can recognize the English letters(A-Z) and digits(0-9)
 4. Developed an application
 5. Export the result to excel
+
+
 
 # Method
 
