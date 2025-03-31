@@ -54,7 +54,7 @@ class LetterNet(torch.nn.Module):
         self.dropout2 = torch.nn.Dropout(0.4)
         self.fc1 = torch.nn.Linear(256 * 5 * 5, 512)
         self.fc2 = torch.nn.Linear(512, 256)
-        self.fc3 = torch.nn.Linear(256, 37)  # 26 classes for letters A-Z
+        self.fc3 = torch.nn.Linear(256, 26)  # 26 classes for letters A-Z
 
     def forward(self, x):
         x = self.conv1(x)
@@ -121,7 +121,7 @@ except Exception as e:
 
 # Load the pre-trained letter classification model
 letter_model = LetterNet()
-letter_model_file = "/Users/ryan/Desktop/DL/FYP/Letters_Model_seed_68322/letters_cnn_epoch:8_test-accuracy:94.8397_test-loss:0.1622.pt"  # Replace with the actual path to your trained letter model
+letter_model_file = "/Users/ryan/Desktop/DL/FYP/Capitals_Model_seed_13692/capitals_cnn_epoch_10_test-accuracy_97.6128_test-loss_0.0016.pt"  # Replace with the actual path to your trained letter model
 try:
     letter_model.load_state_dict(torch.load(letter_model_file, map_location=torch.device('cpu')))
     letter_model.eval()
