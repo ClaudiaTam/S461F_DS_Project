@@ -211,36 +211,171 @@ def display_selected_pdf():
         messagebox.showerror("Error", f"Failed to load PDF: {e}")
 
 def display_image(image):
-    """Display the given PIL image in the GUI."""
-    global canvas, tk_image, scaled_image, image_scale, canvas_offset_x, canvas_offset_y
+    """Display the given PIL image in the GUI with zoom support."""
+    global canvas, tk_image, scaled_image, image_scale, canvas_offset_x, canvas_offset_y, zoom_factor, original_image
     canvas.delete("all")
+    
+    # Store the original image for zooming
+    original_image = image
+    
     image_width, image_height = image.size
     canvas_width, canvas_height = canvas.winfo_width(), canvas.winfo_height()
     if canvas_width <= 1:  # Canvas not yet drawn
         canvas_width, canvas_height = 600, 800
-    scale_factor = min(canvas_width / image_width, canvas_height / image_height)
+    
+    # Calculate display scale based on both window size and zoom factor
+    scale_factor = min(canvas_width / image_width, canvas_height / image_height) * zoom_factor
+    image_scale = scale_factor
+    
     new_width = int(image_width * scale_factor)
     new_height = int(image_height * scale_factor)
     scaled_image = image.resize((new_width, new_height))
-    image_scale = scale_factor
-    canvas_offset_x = (canvas_width - new_width) // 2
-    canvas_offset_y = (canvas_height - new_height) // 2
+    
+    # Center the image on the canvas, considering scroll position
+    canvas_offset_x = max(0, (canvas_width - new_width) // 2)
+    canvas_offset_y = max(0, (canvas_height - new_height) // 2)
+    
     tk_image = ImageTk.PhotoImage(scaled_image)
     canvas.create_image(canvas_offset_x, canvas_offset_y, anchor="nw", image=tk_image)
+    
+    # Configure the canvas scrollregion for panning when zoomed
+    if zoom_factor > 1.0:
+        canvas.configure(scrollregion=(0, 0, max(canvas_width, new_width), max(canvas_height, new_height)))
+    else:
+        canvas.configure(scrollregion=(0, 0, canvas_width, canvas_height))
+
+def on_mousewheel(event):
+    """Handle mouse wheel events for zooming."""
+    global zoom_factor, original_image
+    
+    # Only zoom if in zoom mode
+    if not zoom_mode or not original_image:
+        return
+    
+    # Get the cursor position for zoom focus
+    canvas_x = canvas.canvasx(event.x)
+    canvas_y = canvas.canvasy(event.y)
+    
+    # Determine zoom direction
+    if event.delta > 0 or (hasattr(event, 'num') and event.num == 4):
+        # Zoom in (limit maximum zoom)
+        zoom_factor = min(zoom_factor * 1.1, 5.0)
+    else:
+        # Zoom out (limit minimum zoom)
+        zoom_factor = max(zoom_factor * 0.9, 0.5)
+    
+    # Redisplay with new zoom factor
+    display_image(original_image)
+    
+    # Update status to show zoom level
+    status_label.config(text=f"Zoom: {zoom_factor:.1f}x")
+
+def start_pan(event):
+    """Start panning the canvas when zoom level > 1."""
+    global pan_start_x, pan_start_y
+    
+    if zoom_factor > 1.0:
+        canvas.config(cursor="fleur")  # Change cursor to indicate panning
+        pan_start_x = event.x
+        pan_start_y = event.y
+
+def update_pan(event):
+    """Pan the canvas during mouse drag when zoomed in."""
+    global pan_start_x, pan_start_y
+    
+    if zoom_factor > 1.0 and pan_start_x is not None:
+        # Calculate the amount to move
+        dx = pan_start_x - event.x
+        dy = pan_start_y - event.y
+        
+        # Move the canvas view
+        canvas.xview_scroll(dx, "units")
+        canvas.yview_scroll(dy, "units")
+        
+        # Update the start position for the next move
+        pan_start_x = event.x
+        pan_start_y = event.y
+
+def end_pan(event):
+    """End panning and reset cursor."""
+    global pan_start_x, pan_start_y
+    
+    canvas.config(cursor="arrow")
+    pan_start_x = None
+    pan_start_y = None
+
+def toggle_zoom_mode():
+    """Toggle between crop and zoom mode."""
+    global zoom_mode
+    zoom_mode = not zoom_mode
+    
+    if zoom_mode:
+        # Remove crop bindings and add zoom/pan bindings
+        canvas.unbind("<ButtonPress-1>")
+        canvas.unbind("<B1-Motion>")
+        canvas.unbind("<ButtonRelease-1>")
+        
+        # Add bindings for panning
+        canvas.bind("<ButtonPress-1>", start_pan)
+        canvas.bind("<B1-Motion>", update_pan)
+        canvas.bind("<ButtonRelease-1>", end_pan)
+        
+        # Ensure mousewheel bindings are active for zoom mode
+        canvas.bind("<MouseWheel>", on_mousewheel)  # For Windows and macOS
+        canvas.bind("<Button-4>", on_mousewheel)    # For Linux scroll up
+        canvas.bind("<Button-5>", on_mousewheel)    # For Linux scroll down
+        
+        zoom_button.config(text="Switch to Crop Mode", bg="#FF9800")
+        status_label.config(text="Zoom Mode: Use trackpad/wheel to zoom, click and drag to pan")
+    else:
+        # Remove pan and zoom bindings
+        canvas.unbind("<ButtonPress-1>")
+        canvas.unbind("<B1-Motion>")
+        canvas.unbind("<ButtonRelease-1>")
+        canvas.unbind("<MouseWheel>")
+        canvas.unbind("<Button-4>")
+        canvas.unbind("<Button-5>")
+        
+        # Add crop bindings
+        canvas.bind("<ButtonPress-1>", start_crop)
+        canvas.bind("<B1-Motion>", update_crop)
+        canvas.bind("<ButtonRelease-1>", finish_crop)
+        
+        zoom_button.config(text="Switch to Zoom Mode", bg="#2196F3")
+        status_label.config(text="Crop Mode: Click and drag to select an area")
+
+def reset_zoom():
+    """Reset zoom to 100%."""
+    global zoom_factor, original_image
+    zoom_factor = 1.0
+    if original_image:
+        display_image(original_image)
+    status_label.config(text="Zoom reset to 100%")
 
 def start_crop(event):
+    """Start selecting rectangle area for cropping."""
     global start_x, start_y, rect_id
     if rect_id is not None:
         canvas.delete(rect_id)
         rect_id = None
-    start_x, start_y = event.x - canvas_offset_x, event.y - canvas_offset_y
-    rect_id = canvas.create_rectangle(event.x, event.y, event.x, event.y, outline="red", width=2)
+    
+    # Get current canvas scroll position
+    canvas_x = canvas.canvasx(event.x)
+    canvas_y = canvas.canvasy(event.y)
+    
+    # Adjust for both offset and scroll position
+    start_x = canvas_x - canvas_offset_x
+    start_y = canvas_y - canvas_offset_y
+    
+    rect_id = canvas.create_rectangle(canvas_x, canvas_y, canvas_x, canvas_y, outline="red", width=2)
 
 def update_crop(event):
     global rect_id
-    end_x = max(min(event.x, canvas.winfo_width()), 0)
-    end_y = max(min(event.y, canvas.winfo_height()), 0)
-    canvas.coords(rect_id, start_x + canvas_offset_x, start_y + canvas_offset_y, end_x, end_y)
+    canvas_x = canvas.canvasx(event.x)
+    canvas_y = canvas.canvasy(event.y)
+    
+    # Use canvas coordinates for the rectangle display
+    canvas.coords(rect_id, start_x + canvas_offset_x, start_y + canvas_offset_y, canvas_x, canvas_y)
 
 def finish_crop(event):
     global crop_coords, rect_id
@@ -249,18 +384,30 @@ def finish_crop(event):
         return
 
     try:
-        end_x, end_y = event.x - canvas_offset_x, event.y - canvas_offset_y
+        canvas_x = canvas.canvasx(event.x)
+        canvas_y = canvas.canvasy(event.y)
+        
+        # Calculate end coordinates in image space
+        end_x = canvas_x - canvas_offset_x
+        end_y = canvas_y - canvas_offset_y
+        
+        # Find min/max for proper rectangle regardless of drag direction
         x1, y1, x2, y2 = min(start_x, end_x), min(start_y, end_y), max(start_x, end_x), max(start_y, end_y)
+        
+        # Ensure coordinates are within scaled image bounds
         x1 = max(0, min(x1, scaled_image.width))
         y1 = max(0, min(y1, scaled_image.height))
         x2 = max(0, min(x2, scaled_image.width))
         y2 = max(0, min(y2, scaled_image.height))
+        
+        # Convert back to original image coordinates
         x1_orig = int(x1 / image_scale)
         y1_orig = int(y1 / image_scale)
         x2_orig = int(x2 / image_scale)
         y2_orig = int(y2 / image_scale)
+        
         crop_coords = (x1_orig, y1_orig, x2_orig, y2_orig)
-        status_label.config(text="Selection complete. Ready to classify.")
+        status_label.config(text=f"Selection complete. Region: {crop_coords}")
     except Exception as e:
         messagebox.showerror("Error", f"Failed to calculate crop coordinates: {e}")
 
@@ -394,7 +541,7 @@ def process_image(image_path):
 
 def classify():
     """Classify the cropped region of the PDF image and store debug images."""
-    global crop_coords, pdf_files, rect_id, replace_var, user_entry_var, debug_images
+    global crop_coords, pdf_files, rect_id, debug_images
     if pdf_image is None:
         messagebox.showerror("Error", "No PDF image loaded.")
         return
@@ -429,7 +576,7 @@ def classify():
                 'processed': None,
                 'mnist_images': None,
                 'green_boxes_img': None,
-                'binary_results': None  # Add binary results to debug entry
+                'binary_results': None
             }
             
             digit_results, processed_img, mnist_images, green_boxes_img, binary_results = process_image(temp_image_path)
@@ -452,32 +599,6 @@ def classify():
                 os.remove(temp_image_path)
         except Exception as e:
             recognition_results.append(f"{os.path.basename(file_path)}: Error processing file - {e}")
-
-    if replace_var.get() and user_entry_var.get().strip():
-        user_input = user_entry_var.get().strip()
-        modified_results = []
-        for result in recognition_results:
-            parts = result.split(': ', 1)
-            if len(parts) == 2:
-                filename, content = parts
-                if content.isdigit():
-                    content_list = list(content)
-                    replace_length = min(len(user_input), len(content_list))
-                    for i in range(replace_length):
-                        content_list[i] = user_input[i]
-                    new_content = ''.join(content_list)
-                    modified_results.append(f"{filename}: {new_content}")
-                else:
-                    modified_results.append(result)
-            else:
-                modified_results.append(result)
-        recognition_results = modified_results
-
-        for file_path in file_paths:
-            if file_path in debug_images:
-                file_index = file_paths.index(file_path)
-                if 0 <= file_index < len(recognition_results):
-                    debug_images[file_path]['results'] = recognition_results[file_index].split(': ')[1]
 
     status_label.config(text="Classification complete!")
     show_recognition_results(recognition_results)
@@ -714,7 +835,7 @@ def show_debug_window(file_path=None):
         
         tk.Label(
             detection_frame, 
-            text="Digit Detection (Green Bounding Boxes):", 
+            text="Handwritten Characters Detection (Green Bounding Boxes):", 
             font=("Arial", 12)
         ).pack(side=tk.LEFT, padx=5)
         
@@ -822,7 +943,7 @@ try:
 except Exception:
     pass
 
-# Global variables
+# Global variables (removed replace_var and user_entry_var)
 pdf_image = None
 tk_image = None
 scaled_image = None
@@ -833,6 +954,11 @@ crop_coords = None
 pdf_files = []
 debug_images = {}
 canvas_offset_x = canvas_offset_y = 0
+zoom_factor = 1.0
+original_image = None
+zoom_mode = False
+pan_start_x = None
+pan_start_y = None
 
 main_frame = tk.Frame(root)
 main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -850,21 +976,6 @@ pdf_combobox = ttk.Combobox(control_frame, width=40, state="readonly")
 pdf_combobox.grid(row=0, column=2, padx=5, pady=5, sticky="w")
 pdf_combobox.bind("<<ComboboxSelected>>", on_combobox_select)
 
-replace_var = tk.BooleanVar(value=False)
-replace_check = tk.Checkbutton(control_frame, text="Replace first digits with:", variable=replace_var)
-replace_check.grid(row=1, column=0, padx=5, pady=5, sticky="e")
-
-user_entry_var = tk.StringVar()
-user_entry = tk.Entry(
-    control_frame, 
-    textvariable=user_entry_var, 
-    width=5,
-    font=("Arial", 12),
-    validate="key",
-    validatecommand=(root.register(lambda p: len(p) <= 4), '%P')
-)
-user_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
-
 classify_button = tk.Button(
     control_frame, 
     text="Classify", 
@@ -875,7 +986,7 @@ classify_button = tk.Button(
     fg="black",
     font=("Arial", 10, "bold")
 )
-classify_button.grid(row=1, column=2, padx=5, pady=5)
+classify_button.grid(row=0, column=3, padx=5, pady=5)
 
 status_label = tk.Label(
     control_frame, 
@@ -885,7 +996,7 @@ status_label = tk.Label(
     relief=tk.SUNKEN,
     anchor=tk.W
 )
-status_label.grid(row=1, column=3, columnspan=1, padx=5, pady=5, sticky="ew")
+status_label.grid(row=0, column=4, columnspan=1, padx=5, pady=5, sticky="ew")
 
 canvas_frame = tk.Frame(main_frame, bd=2, relief=tk.SUNKEN)
 canvas_frame.pack(fill=tk.BOTH, expand=True, pady=10)
@@ -900,6 +1011,41 @@ instructions = tk.Label(
     fg="#666666"
 )
 instructions.pack(pady=5, anchor=tk.W)
+
+# In your control_frame setup, add zoom controls
+zoom_button = tk.Button(
+    control_frame, 
+    text="Switch to Zoom Mode", 
+    command=toggle_zoom_mode,
+    width=15,
+    height=2,
+    bg="#2196F3",
+    fg="black",
+    font=("Arial", 10, "bold")
+)
+zoom_button.grid(row=0, column=5, padx=5, pady=5)
+
+reset_zoom_button = tk.Button(
+    control_frame, 
+    text="Reset Zoom", 
+    command=reset_zoom,
+    width=10,
+    height=2,
+    bg="#9E9E9E",
+    fg="black",
+    font=("Arial", 10, "bold")
+)
+reset_zoom_button.grid(row=0, column=6, padx=5, pady=5)
+
+# Configure the canvas for scrolling when zoomed
+h_scrollbar = ttk.Scrollbar(canvas_frame, orient="horizontal", command=canvas.xview)
+v_scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
+canvas.configure(xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set)
+
+# Pack all elements in the canvas_frame
+canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
 
 canvas.bind("<ButtonPress-1>", start_crop)
 canvas.bind("<B1-Motion>", update_crop)
