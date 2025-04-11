@@ -7,6 +7,7 @@ from torchvision import transforms
 import openpyxl
 import cv2
 import numpy as np
+import shutil
 import time
 import os
 
@@ -40,8 +41,7 @@ class DigitNet(torch.nn.Module):
         x = self.fc2(x)
         x = torch.nn.functional.relu(x)
         x = self.fc3(x)
-        output = torch.nn.functional.log_softmax(x, dim=1)
-        return output
+        return x
 
 # Define the letter classification model architecture (26 classes: A-Z)
 class LetterNet(torch.nn.Module):
@@ -111,7 +111,7 @@ class BinaryNet(torch.nn.Module):
 
 # Load the pre-trained digit classification model
 digit_model = DigitNet()
-digit_model_file = "/Users/ryan/Desktop/DL/FYP/Combined_Model_seed_14598/combined_cnn_epoch:9_test-accuracy:99.5481_test-loss:0.0128.pt"
+digit_model_file = "/Users/ryan/Desktop/DL/FYP/Combined_Model_seed_53881/combined_cnn_epoch:14_test-accuracy:99.5865_test-loss:0.0144.pt"
 try:
     digit_model.load_state_dict(torch.load(digit_model_file, map_location=torch.device('cpu')))
     digit_model.eval()
@@ -532,10 +532,9 @@ def process_image(image_path):
         cv2.imwrite(digit_filename, mnist_digit)
         result, binary_label = classify_image(digit_filename)
         if result is not None:
-            digit_results.append(result)  # Could be digit (0-9) or letter (A-Z)
+            digit_results.append(result)
             binary_results.append(binary_label)
         cv2.rectangle(green_boxes_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        os.remove(digit_filename)
 
     return digit_results, cleaned_binary, mnist_images, green_boxes_img, binary_results
 
@@ -558,6 +557,7 @@ def classify():
 
     recognition_results = []
     file_paths = pdf_files
+    output_dir = "/Users/ryan/Desktop/cropped_digits"  # Define the folder path here
     
     for file_path in file_paths:
         try:
@@ -599,6 +599,10 @@ def classify():
                 os.remove(temp_image_path)
         except Exception as e:
             recognition_results.append(f"{os.path.basename(file_path)}: Error processing file - {e}")
+
+    # Delete the "cropped_digits" folder after all processing is done
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
 
     status_label.config(text="Classification complete!")
     show_recognition_results(recognition_results)
