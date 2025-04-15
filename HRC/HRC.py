@@ -842,7 +842,7 @@ def show_debug_window(file_path=None):
             download_btn = tk.Button(
                 step_frame, 
                 text="Download", 
-                command=lambda p=prefix: download_image(debug_data[key], p, debug_window, file_path),
+                command=lambda p=prefix, k=key: download_image(debug_data[k], p, debug_window, file_path),
                 width=10,
                 height=1,
                 bg="#ffffff",
