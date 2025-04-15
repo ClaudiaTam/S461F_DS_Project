@@ -10,6 +10,7 @@ import numpy as np
 import shutil
 import time
 import os
+import uuid
 
 # Define the digit classification model architecture (10 classes: 0-9)
 class DigitNet(torch.nn.Module):
@@ -73,8 +74,7 @@ class LetterNet(torch.nn.Module):
         x = self.fc2(x)
         x = torch.nn.functional.relu(x)
         x = self.fc3(x)
-        output = torch.nn.functional.log_softmax(x, dim=1)
-        return output
+        return x
 
 # Define the binary classification model architecture (2 classes: digit or letter)
 class BinaryNet(torch.nn.Module):
@@ -121,17 +121,17 @@ except Exception as e:
 
 # Load the pre-trained letter classification model
 letter_model = LetterNet()
-letter_model_file = "/Users/ryan/Desktop/DL/FYP/Capitals_Model_seed_13692/capitals_cnn_epoch_10_test-accuracy_97.6128_test-loss_0.0016.pt"  # Replace with the actual path to your trained letter model
+letter_model_file = "/Users/ryan/Desktop/DL/FYP/Capitals_Model_seed_76702/capitals_cnn_epoch_15_test-accuracy_97.7364_test-loss_0.0015.pt"
 try:
     letter_model.load_state_dict(torch.load(letter_model_file, map_location=torch.device('cpu')))
     letter_model.eval()
 except Exception as e:
     print(f"Error loading letter model: {e}")
-    exit()  
+    exit()
 
 # Load the pre-trained binary classification model
 binary_model = BinaryNet()
-binary_model_file = "/Users/ryan/Desktop/DL/FYP/Binary_Model_seed_67675/binary_cnn_epoch:54_test-accuracy:99.9306_test-loss:0.0046.pt"  # Replace with your actual binary model path
+binary_model_file = "/Users/ryan/Desktop/DL/FYP/Binary_Model_seed_67675/binary_cnn_epoch:54_test-accuracy:99.9306_test-loss:0.0046.pt"
 try:
     binary_model.load_state_dict(torch.load(binary_model_file, map_location=torch.device('cpu')))
     binary_model.eval()
@@ -414,14 +414,19 @@ def finish_crop(event):
 def process_image(image_path):
     """Process the image, detect characters, crop to MNIST format, and classify them."""
     img = cv2.imread(image_path)
+    # Step 1: Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray_pil = Image.fromarray(gray)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced_gray = clahe.apply(gray)
+
+    # Step 2: Adaptive thresholding
     binary = cv2.adaptiveThreshold(
         enhanced_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 21, 12
     )
+    binary_pil = Image.fromarray(binary)
 
-    # Remove vertical and horizontal lines
+    # Step 3: Remove vertical and horizontal lines
     vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 30))
     eroded = cv2.erode(binary, vertical_kernel, iterations=1)
     detected_vertical_lines = cv2.morphologyEx(eroded, cv2.MORPH_OPEN, vertical_kernel)
@@ -432,17 +437,13 @@ def process_image(image_path):
     dilated_horizontal_lines = cv2.dilate(detected_horizontal_lines, horizontal_kernel, iterations=1)
     combined_lines = cv2.add(dilated_vertical_lines, dilated_horizontal_lines)
     cleaned_binary = cv2.subtract(binary, combined_lines)
+    lines_removed_pil = Image.fromarray(cleaned_binary)
 
-    # Clean up noise
+    # Step 4: Clean up noise
     closing_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
     cleaned_binary = cv2.morphologyEx(cleaned_binary, cv2.MORPH_CLOSE, closing_kernel)
     cleaned_binary = cv2.medianBlur(cleaned_binary, 3)
-    repair_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    repaired_binary = cv2.dilate(cleaned_binary, repair_kernel, iterations=1)
-
-    # Additional dilation to connect disjointed parts
-    connect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    connected_binary = cv2.dilate(repaired_binary, connect_kernel, iterations=2)
+    final_processed_pil = Image.fromarray(cleaned_binary)
 
     def preprocess_to_mnist_format(image):
         """Convert an image to MNIST format (28x28, centered, grayscale)."""
@@ -468,11 +469,11 @@ def process_image(image_path):
         return canvas
 
     margin = 5
-    contours, _ = cv2.findContours(connected_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(cleaned_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     output_dir = "/Users/ryan/Desktop/cropped_digits"
     os.makedirs(output_dir, exist_ok=True)
 
-    img_height, img_width = repaired_binary.shape
+    img_height, img_width = cleaned_binary.shape
 
     def merge_nearby_contours(contours, distance_threshold=10):
         bounding_boxes = [cv2.boundingRect(c) for c in contours]
@@ -510,7 +511,7 @@ def process_image(image_path):
     initial_boxes = []
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
-        if 2 < w < 100 and 17 < h < 100:
+        if 2 < w < 100 and 15 < h < 100:
             if (x > margin and y > margin and 
                 x + w < img_width - margin and 
                 y + h < img_height - margin):
@@ -535,8 +536,19 @@ def process_image(image_path):
             digit_results.append(result)
             binary_results.append(binary_label)
         cv2.rectangle(green_boxes_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        os.remove(digit_filename)
 
-    return digit_results, cleaned_binary, mnist_images, green_boxes_img, binary_results
+    return (
+        digit_results, 
+        cleaned_binary, 
+        mnist_images, 
+        green_boxes_img, 
+        binary_results, 
+        gray_pil, 
+        binary_pil, 
+        lines_removed_pil, 
+        final_processed_pil
+    )
 
 def classify():
     """Classify the cropped region of the PDF image and store debug images."""
@@ -557,7 +569,7 @@ def classify():
 
     recognition_results = []
     file_paths = pdf_files
-    output_dir = "/Users/ryan/Desktop/cropped_digits"  # Define the folder path here
+    output_dir = "/Users/ryan/Desktop/cropped_digits"
     
     for file_path in file_paths:
         try:
@@ -573,18 +585,34 @@ def classify():
             debug_entry = {
                 'original': original_img,
                 'cropped': cropped_image,
+                'gray': None,
+                'binary': None,
+                'lines_removed': None,
                 'processed': None,
                 'mnist_images': None,
+                'results': None,
                 'green_boxes_img': None,
                 'binary_results': None
             }
             
-            digit_results, processed_img, mnist_images, green_boxes_img, binary_results = process_image(temp_image_path)
-            processed_img_pil = Image.fromarray(processed_img)
+            (
+                digit_results, 
+                processed_img, 
+                mnist_images, 
+                green_boxes_img, 
+                binary_results,
+                gray_pil,
+                binary_pil,
+                lines_removed_pil,
+                final_processed_pil
+            ) = process_image(temp_image_path)
             green_boxes_img_pil = Image.fromarray(green_boxes_img)
 
             debug_entry.update({
-                'processed': processed_img_pil,
+                'gray': gray_pil,
+                'binary': binary_pil,
+                'lines_removed': lines_removed_pil,
+                'processed': final_processed_pil,
                 'mnist_images': mnist_images,
                 'results': ''.join(digit_results),
                 'green_boxes_img': green_boxes_img_pil,
@@ -600,7 +628,6 @@ def classify():
         except Exception as e:
             recognition_results.append(f"{os.path.basename(file_path)}: Error processing file - {e}")
 
-    # Delete the "cropped_digits" folder after all processing is done
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
 
@@ -618,11 +645,9 @@ def export_to_excel(results, parent_window):
         ws = wb.active
         ws.title = "Recognition Results"
         
-        # Add headers
         ws['A1'] = "File Name"
         ws['B1'] = "Recognized Text"
         
-        # Add data
         for row, result in enumerate(results, start=2):
             parts = result.split(': ', 1)
             if len(parts) == 2:
@@ -633,7 +658,6 @@ def export_to_excel(results, parent_window):
                 ws[f'A{row}'] = "Error"
                 ws[f'B{row}'] = result
         
-        # Save the file with a timestamp to avoid overwriting
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = os.path.join(save_dir, f"recognition_results_{timestamp}.xlsx")
         wb.save(filename)
@@ -667,7 +691,6 @@ def show_recognition_results(results):
     debug_btn = tk.Button(control_frame, text="Show Debug Details", command=on_debug_select)
     debug_btn.pack(side=tk.LEFT, padx=5)
 
-    # Add the Output button
     output_btn = tk.Button(
         control_frame, 
         text="Output to Excel", 
@@ -685,7 +708,6 @@ def show_recognition_results(results):
         text_area.insert(tk.END, result + "\n")
     text_area.configure(state="disabled")
 
-# Add this new helper function above `show_debug_window`
 def download_image(image, filename_prefix, parent_window, file_path=None):
     """Prompt user to save a single image with a unique filename."""
     if not image:
@@ -726,7 +748,6 @@ def download_mnist_images(debug_data, parent_window, file_path=None):
     except Exception as e:
         messagebox.showerror("Download Error", f"Failed to save MNIST images: {e}")
 
-# Replace the existing `show_debug_window` function with this updated version
 def show_debug_window(file_path=None):
     """Show a debug window with processing details including binary classification and additional download buttons."""
     if not file_path or file_path not in debug_images:
@@ -735,7 +756,7 @@ def show_debug_window(file_path=None):
         
     debug_window = tk.Toplevel(root)
     debug_window.title(f"Debug Details - {os.path.basename(file_path)}")
-    debug_window.geometry("800x600")
+    debug_window.geometry("800x800")
     
     main_frame = tk.Frame(debug_window)
     main_frame.pack(fill=tk.BOTH, expand=True)
@@ -799,38 +820,46 @@ def show_debug_window(file_path=None):
         label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
         row += 1
     
-    # Processed Image Section
-    if 'processed' in debug_data and debug_data['processed']:
-        processed_frame = tk.Frame(scrollable_frame)
-        processed_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
-        
-        tk.Label(
-            processed_frame, 
-            text="Processed Image (After Preprocessing):", 
-            font=("Arial", 12)
-        ).pack(side=tk.LEFT, padx=5)
-        
-        download_processed_btn = tk.Button(
-            processed_frame, 
-            text="Download", 
-            command=lambda: download_image(debug_data['processed'], "processed", debug_window, file_path),
-            width=10,
-            height=1,
-            bg="#ffffff",
-            fg="black",
-            font=("Arial", 10, "bold")
-        )
-        download_processed_btn.pack(side=tk.LEFT, padx=5)
-        
-        row += 1
-        
-        img = debug_data['processed'].copy()
-        img.thumbnail((400, 400))
-        tk_img = ImageTk.PhotoImage(img)
-        label = tk.Label(scrollable_frame, image=tk_img)
-        label.image = tk_img
-        label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
-        row += 1
+    # Processing Steps Section
+    processing_steps = [
+        ('gray', "Step 1: Grayscale Conversion", "grayscale"),
+        ('binary', "Step 2: Adaptive Thresholding", "thresholded"),
+        ('lines_removed', "Step 3: Lines Removed", "lines_removed"),
+        ('processed', "Step 4: Final Processed Image (Noise Cleaned)", "processed")
+    ]
+    
+    for key, title, prefix in processing_steps:
+        if key in debug_data and debug_data[key]:
+            step_frame = tk.Frame(scrollable_frame)
+            step_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
+            
+            tk.Label(
+                step_frame, 
+                text=title, 
+                font=("Arial", 12)
+            ).pack(side=tk.LEFT, padx=5)
+            
+            download_btn = tk.Button(
+                step_frame, 
+                text="Download", 
+                command=lambda p=prefix: download_image(debug_data[key], p, debug_window, file_path),
+                width=10,
+                height=1,
+                bg="#ffffff",
+                fg="black",
+                font=("Arial", 10, "bold")
+            )
+            download_btn.pack(side=tk.LEFT, padx=5)
+            
+            row += 1
+            
+            img = debug_data[key].copy()
+            img.thumbnail((400, 400))
+            tk_img = ImageTk.PhotoImage(img)
+            label = tk.Label(scrollable_frame, image=tk_img)
+            label.image = tk_img
+            label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
+            row += 1
     
     # Digit Detection Section
     if 'green_boxes_img' in debug_data and debug_data['green_boxes_img']:
@@ -865,7 +894,7 @@ def show_debug_window(file_path=None):
         label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
         row += 1
     
-    # MNIST Images Section (unchanged except for row increment)
+    # MNIST Images Section
     if 'mnist_images' in debug_data and debug_data['mnist_images']:
         mnist_title_frame = tk.Frame(scrollable_frame)
         mnist_title_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
@@ -947,7 +976,7 @@ try:
 except Exception:
     pass
 
-# Global variables (removed replace_var and user_entry_var)
+# Global variables
 pdf_image = None
 tk_image = None
 scaled_image = None
@@ -1016,7 +1045,6 @@ instructions = tk.Label(
 )
 instructions.pack(pady=5, anchor=tk.W)
 
-# In your control_frame setup, add zoom controls
 zoom_button = tk.Button(
     control_frame, 
     text="Switch to Zoom Mode", 
@@ -1041,12 +1069,10 @@ reset_zoom_button = tk.Button(
 )
 reset_zoom_button.grid(row=0, column=6, padx=5, pady=5)
 
-# Configure the canvas for scrolling when zoomed
 h_scrollbar = ttk.Scrollbar(canvas_frame, orient="horizontal", command=canvas.xview)
 v_scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
 canvas.configure(xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set)
 
-# Pack all elements in the canvas_frame
 canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
