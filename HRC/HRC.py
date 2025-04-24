@@ -10,7 +10,6 @@ import numpy as np
 import shutil
 import time
 import os
-import uuid
 
 # Define the digit classification model architecture (10 classes: 0-9)
 class DigitNet(torch.nn.Module):
@@ -121,17 +120,17 @@ except Exception as e:
 
 # Load the pre-trained letter classification model
 letter_model = LetterNet()
-letter_model_file = "/Users/ryan/Desktop/DL/FYP/Capitals_Model_seed_76702/capitals_cnn_epoch_15_test-accuracy_97.7364_test-loss_0.0015.pt"
+letter_model_file = "/Users/ryan/Desktop/DL/FYP/Capitals_Model_seed_76702/capitals_cnn_epoch_15_test-accuracy_97.7364_test-loss_0.0015.pt"  # Replace with the actual path to your trained letter model
 try:
     letter_model.load_state_dict(torch.load(letter_model_file, map_location=torch.device('cpu')))
     letter_model.eval()
 except Exception as e:
     print(f"Error loading letter model: {e}")
-    exit()
+    exit()  
 
 # Load the pre-trained binary classification model
 binary_model = BinaryNet()
-binary_model_file = "/Users/ryan/Desktop/DL/FYP/Binary_Model_seed_67675/binary_cnn_epoch:54_test-accuracy:99.9306_test-loss:0.0046.pt"
+binary_model_file = "/Users/ryan/Desktop/DL/FYP/Binary_Model_seed_67675/binary_cnn_epoch:54_test-accuracy:99.9306_test-loss:0.0046.pt"  # Replace with your actual binary model path
 try:
     binary_model.load_state_dict(torch.load(binary_model_file, map_location=torch.device('cpu')))
     binary_model.eval()
@@ -414,9 +413,9 @@ def finish_crop(event):
 def process_image(image_path):
     """Process the image, detect characters, crop to MNIST format, and classify them."""
     img = cv2.imread(image_path)
-    # Step 1: Convert to grayscale
+
+     # Step 1: Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray_pil = Image.fromarray(gray)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced_gray = clahe.apply(gray)
 
@@ -424,7 +423,6 @@ def process_image(image_path):
     binary = cv2.adaptiveThreshold(
         enhanced_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 21, 12
     )
-    binary_pil = Image.fromarray(binary)
 
     # Step 3: Remove vertical and horizontal lines
     vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 30))
@@ -437,13 +435,11 @@ def process_image(image_path):
     dilated_horizontal_lines = cv2.dilate(detected_horizontal_lines, horizontal_kernel, iterations=1)
     combined_lines = cv2.add(dilated_vertical_lines, dilated_horizontal_lines)
     cleaned_binary = cv2.subtract(binary, combined_lines)
-    lines_removed_pil = Image.fromarray(cleaned_binary)
 
-    # Step 4: Clean up noise
+     # Step 4: Clean up noise
     closing_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
     cleaned_binary = cv2.morphologyEx(cleaned_binary, cv2.MORPH_CLOSE, closing_kernel)
     cleaned_binary = cv2.medianBlur(cleaned_binary, 3)
-    final_processed_pil = Image.fromarray(cleaned_binary)
 
     def preprocess_to_mnist_format(image):
         """Convert an image to MNIST format (28x28, centered, grayscale)."""
@@ -536,19 +532,8 @@ def process_image(image_path):
             digit_results.append(result)
             binary_results.append(binary_label)
         cv2.rectangle(green_boxes_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        os.remove(digit_filename)
 
-    return (
-        digit_results, 
-        cleaned_binary, 
-        mnist_images, 
-        green_boxes_img, 
-        binary_results, 
-        gray_pil, 
-        binary_pil, 
-        lines_removed_pil, 
-        final_processed_pil
-    )
+    return digit_results, cleaned_binary, mnist_images, green_boxes_img, binary_results, bounding_boxes
 
 def classify():
     """Classify the cropped region of the PDF image and store debug images."""
@@ -569,7 +554,7 @@ def classify():
 
     recognition_results = []
     file_paths = pdf_files
-    output_dir = "/Users/ryan/Desktop/cropped_digits"
+    output_dir = "/Users/ryan/Desktop/cropped_digits"  # Define the folder path here
     
     for file_path in file_paths:
         try:
@@ -585,38 +570,23 @@ def classify():
             debug_entry = {
                 'original': original_img,
                 'cropped': cropped_image,
-                'gray': None,
-                'binary': None,
-                'lines_removed': None,
                 'processed': None,
                 'mnist_images': None,
-                'results': None,
                 'green_boxes_img': None,
                 'binary_results': None
             }
             
-            (
-                digit_results, 
-                processed_img, 
-                mnist_images, 
-                green_boxes_img, 
-                binary_results,
-                gray_pil,
-                binary_pil,
-                lines_removed_pil,
-                final_processed_pil
-            ) = process_image(temp_image_path)
+            digit_results, processed_img, mnist_images, green_boxes_img, binary_results, bounding_boxes = process_image(temp_image_path)
+            processed_img_pil = Image.fromarray(processed_img)
             green_boxes_img_pil = Image.fromarray(green_boxes_img)
 
             debug_entry.update({
-                'gray': gray_pil,
-                'binary': binary_pil,
-                'lines_removed': lines_removed_pil,
-                'processed': final_processed_pil,
+                'processed': processed_img_pil,
                 'mnist_images': mnist_images,
                 'results': ''.join(digit_results),
                 'green_boxes_img': green_boxes_img_pil,
-                'binary_results': binary_results
+                'binary_results': binary_results,
+                'bounding_boxes': bounding_boxes  # Store the bounding boxes
             })
             
             recognition_results.append(f"{os.path.basename(file_path)}: {''.join(digit_results)}")
@@ -628,6 +598,7 @@ def classify():
         except Exception as e:
             recognition_results.append(f"{os.path.basename(file_path)}: Error processing file - {e}")
 
+    # Delete the "cropped_digits" folder after all processing is done
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
 
@@ -645,9 +616,11 @@ def export_to_excel(results, parent_window):
         ws = wb.active
         ws.title = "Recognition Results"
         
+        # Add headers
         ws['A1'] = "File Name"
         ws['B1'] = "Recognized Text"
         
+        # Add data
         for row, result in enumerate(results, start=2):
             parts = result.split(': ', 1)
             if len(parts) == 2:
@@ -658,6 +631,7 @@ def export_to_excel(results, parent_window):
                 ws[f'A{row}'] = "Error"
                 ws[f'B{row}'] = result
         
+        # Save the file with a timestamp to avoid overwriting
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = os.path.join(save_dir, f"recognition_results_{timestamp}.xlsx")
         wb.save(filename)
@@ -667,6 +641,12 @@ def export_to_excel(results, parent_window):
 
 def show_recognition_results(results):
     """Display recognition results in a scrollable text window with an output button."""
+    global result_window
+    
+    # If result_window exists, destroy it to create a fresh one
+    if result_window is not None and result_window.winfo_exists():
+        result_window.destroy()
+    
     result_window = tk.Toplevel(root)
     result_window.title("Recognition Results")
     result_window.geometry("1200x400")
@@ -707,7 +687,11 @@ def show_recognition_results(results):
     for result in results:
         text_area.insert(tk.END, result + "\n")
     text_area.configure(state="disabled")
+    
+    # Store the text_area in the window for later updates
+    result_window.text_area = text_area
 
+# Add this new helper function above `show_debug_window`
 def download_image(image, filename_prefix, parent_window, file_path=None):
     """Prompt user to save a single image with a unique filename."""
     if not image:
@@ -748,6 +732,7 @@ def download_mnist_images(debug_data, parent_window, file_path=None):
     except Exception as e:
         messagebox.showerror("Download Error", f"Failed to save MNIST images: {e}")
 
+# Replace the existing `show_debug_window` function with this updated version
 def show_debug_window(file_path=None):
     """Show a debug window with processing details including binary classification and additional download buttons."""
     if not file_path or file_path not in debug_images:
@@ -756,7 +741,7 @@ def show_debug_window(file_path=None):
         
     debug_window = tk.Toplevel(root)
     debug_window.title(f"Debug Details - {os.path.basename(file_path)}")
-    debug_window.geometry("800x800")
+    debug_window.geometry("800x600")
     
     main_frame = tk.Frame(debug_window)
     main_frame.pack(fill=tk.BOTH, expand=True)
@@ -820,48 +805,40 @@ def show_debug_window(file_path=None):
         label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
         row += 1
     
-    # Processing Steps Section
-    processing_steps = [
-        ('gray', "Step 1: Grayscale Conversion", "grayscale"),
-        ('binary', "Step 2: Adaptive Thresholding", "thresholded"),
-        ('lines_removed', "Step 3: Lines Removed", "lines_removed"),
-        ('processed', "Step 4: Final Processed Image (Noise Cleaned)", "processed")
-    ]
+    # Processed Image Section
+    if 'processed' in debug_data and debug_data['processed']:
+        processed_frame = tk.Frame(scrollable_frame)
+        processed_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        
+        tk.Label(
+            processed_frame, 
+            text="Processed Image (After Preprocessing):", 
+            font=("Arial", 12)
+        ).pack(side=tk.LEFT, padx=5)
+        
+        download_processed_btn = tk.Button(
+            processed_frame, 
+            text="Download", 
+            command=lambda: download_image(debug_data['processed'], "processed", debug_window, file_path),
+            width=10,
+            height=1,
+            bg="#ffffff",
+            fg="black",
+            font=("Arial", 10, "bold")
+        )
+        download_processed_btn.pack(side=tk.LEFT, padx=5)
+        
+        row += 1
+        
+        img = debug_data['processed'].copy()
+        img.thumbnail((400, 400))
+        tk_img = ImageTk.PhotoImage(img)
+        label = tk.Label(scrollable_frame, image=tk_img)
+        label.image = tk_img
+        label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
+        row += 1
     
-    for key, title, prefix in processing_steps:
-        if key in debug_data and debug_data[key]:
-            step_frame = tk.Frame(scrollable_frame)
-            step_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
-            
-            tk.Label(
-                step_frame, 
-                text=title, 
-                font=("Arial", 12)
-            ).pack(side=tk.LEFT, padx=5)
-            
-            download_btn = tk.Button(
-                step_frame, 
-                text="Download", 
-                command=lambda p=prefix, k=key: download_image(debug_data[k], p, debug_window, file_path),
-                width=10,
-                height=1,
-                bg="#ffffff",
-                fg="black",
-                font=("Arial", 10, "bold")
-            )
-            download_btn.pack(side=tk.LEFT, padx=5)
-            
-            row += 1
-            
-            img = debug_data[key].copy()
-            img.thumbnail((400, 400))
-            tk_img = ImageTk.PhotoImage(img)
-            label = tk.Label(scrollable_frame, image=tk_img)
-            label.image = tk_img
-            label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
-            row += 1
-    
-    # Digit Detection Section
+    # Digit Detection Section with Edit button
     if 'green_boxes_img' in debug_data and debug_data['green_boxes_img']:
         detection_frame = tk.Frame(scrollable_frame)
         detection_frame.grid(row=row, column=0, sticky="w", padx=10, pady=5)
@@ -883,6 +860,19 @@ def show_debug_window(file_path=None):
             font=("Arial", 10, "bold")
         )
         download_detection_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Add Edit button
+        edit_btn = tk.Button(
+            detection_frame, 
+            text="Edit Boxes", 
+            command=lambda: edit_bounding_boxes(debug_data, file_path, debug_window),
+            width=10,
+            height=1,
+            bg="#FF9800",
+            fg="black",
+            font=("Arial", 10, "bold")
+        )
+        edit_btn.pack(side=tk.LEFT, padx=5)
         
         row += 1
         
@@ -952,6 +942,486 @@ def show_debug_window(file_path=None):
 
     tk.Button(scrollable_frame, text="Close", command=debug_window.destroy, width=20, height=2).grid(row=row, column=0, pady=20)
 
+def edit_bounding_boxes(debug_data, file_path, parent_window):
+    """Open a new window for editing bounding boxes on the detection image."""
+    edit_window = tk.Toplevel(parent_window)
+    edit_window.title(f"Edit Bounding Boxes - {os.path.basename(file_path)}")
+    edit_window.geometry("1000x700")
+    
+    # Frame for control buttons
+    control_frame = tk.Frame(edit_window)
+    control_frame.pack(fill=tk.X, padx=10, pady=5)
+    
+    # Create a custom frame with canvas for the image editing
+    image_frame = tk.Frame(edit_window, bd=2, relief=tk.SUNKEN)
+    image_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+    
+    # Canvas for image display with scrollbars
+    h_scrollbar = ttk.Scrollbar(image_frame, orient="horizontal")
+    v_scrollbar = ttk.Scrollbar(image_frame, orient="vertical")
+    
+    edit_canvas = tk.Canvas(
+        image_frame, 
+        bg="light gray",
+        xscrollcommand=h_scrollbar.set,
+        yscrollcommand=v_scrollbar.set
+    )
+    
+    h_scrollbar.config(command=edit_canvas.xview)
+    v_scrollbar.config(command=edit_canvas.yview)
+    
+    h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+    v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    edit_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    
+    # Status frame for messages
+    status_frame = tk.Frame(edit_window)
+    status_frame.pack(fill=tk.X, padx=10, pady=5)
+    
+    status_label = tk.Label(
+        status_frame, 
+        text="Click 'Add Box' to create a new bounding box or select an existing box to remove it", 
+        bd=1, 
+        relief=tk.SUNKEN, 
+        anchor=tk.W
+    )
+    status_label.pack(fill=tk.X)
+    
+    # Frame for buttons
+    button_frame = tk.Frame(edit_window)
+    button_frame.pack(fill=tk.X, padx=10, pady=5)
+    
+    # Variables for tracking edit state
+    edit_mode = tk.StringVar(value="select")  # 'select', 'add', 'remove'
+    selected_box = None
+    start_x = start_y = 0
+    rect_id = None
+    boxes = []  # Will store [x1, y1, x2, y2, rect_id] for each box
+    
+    # Load initial image
+    original_img = None
+    try:
+        # Get the processed binary image as a base to work with
+        if 'processed' in debug_data and debug_data['processed']:
+            # Convert PIL image to CV2 for processing
+            processed_img = debug_data['processed']
+            np_img = np.array(processed_img)
+            if len(np_img.shape) == 2:  # Grayscale
+                original_img = cv2.cvtColor(np_img, cv2.COLOR_GRAY2BGR)
+            else:
+                original_img = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to load image for editing: {e}")
+        edit_window.destroy()
+        return
+    
+    # Get existing bounding boxes if available
+    existing_boxes = []
+    if file_path in debug_images and 'bounding_boxes' in debug_images[file_path]:
+        existing_boxes = debug_images[file_path]['bounding_boxes']
+    
+    # Function to draw all boxes on the image
+    def redraw_image():
+        nonlocal original_img, boxes
+        
+        # Create a clean copy of the original image
+        display_img = original_img.copy()
+        
+        # Draw all the saved boxes
+        for x1, y1, x2, y2, _ in boxes:
+            cv2.rectangle(display_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        
+        # Convert back to PIL for display
+        img_rgb = cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(img_rgb)
+        
+        # Update the canvas
+        width, height = pil_img.size
+        edit_canvas.config(scrollregion=(0, 0, width, height))
+        
+        # Store the image references to prevent garbage collection
+        edit_window.pil_img = pil_img
+        edit_window.tk_img = ImageTk.PhotoImage(pil_img)
+        
+        # Display the image
+        edit_canvas.delete("all")
+        edit_canvas.create_image(0, 0, anchor="nw", image=edit_window.tk_img)
+        
+        # Redraw the boxes as selectable rectangles
+        for i, (x1, y1, x2, y2, _) in enumerate(boxes):
+            rect_id = edit_canvas.create_rectangle(
+                x1, y1, x2, y2, 
+                outline="red", 
+                width=2,
+                tags=(f"box_{i}", "box")
+            )
+            # Update the rect_id in the boxes list
+            boxes[i] = [x1, y1, x2, y2, rect_id]
+        
+        # Bind box selection
+        edit_canvas.tag_bind("box", "<ButtonPress-1>", on_select_box)
+    
+    # Initialize with existing boxes
+    for x, y, w, h in existing_boxes:
+        boxes.append([x, y, x+w, y+h, None])
+    
+    # Event handlers for box editing
+    def on_select_box(event):
+        nonlocal selected_box
+        if edit_mode.get() != "select":
+            return
+            
+        # Find which box was clicked
+        clicked_item = edit_canvas.find_closest(edit_canvas.canvasx(event.x), edit_canvas.canvasy(event.y))[0]
+        tags = edit_canvas.gettags(clicked_item)
+        
+        # Check if it's a box
+        box_tag = next((tag for tag in tags if tag.startswith("box_")), None)
+        if box_tag:
+            # Extract box index
+            box_idx = int(box_tag.split("_")[1])
+            selected_box = box_idx
+            
+            # Highlight selected box
+            for i, (x1, y1, x2, y2, rect_id) in enumerate(boxes):
+                if i == box_idx:
+                    edit_canvas.itemconfig(rect_id, outline="blue", width=3)
+                else:
+                    edit_canvas.itemconfig(rect_id, outline="red", width=2)
+            
+            status_label.config(text=f"Box {box_idx} selected. Click 'Remove Box' to delete it.")
+    
+    def start_add_box(event):
+        nonlocal start_x, start_y, rect_id
+        if edit_mode.get() != "add":
+            return
+            
+        # Get canvas coordinates
+        canvas_x = edit_canvas.canvasx(event.x)
+        canvas_y = edit_canvas.canvasy(event.y)
+        
+        start_x, start_y = int(canvas_x), int(canvas_y)
+        rect_id = edit_canvas.create_rectangle(
+            canvas_x, canvas_y, canvas_x, canvas_y, 
+            outline="green", 
+            width=2
+        )
+    
+    def update_add_box(event):
+        nonlocal rect_id
+        if edit_mode.get() != "add" or rect_id is None:
+            return
+            
+        # Get canvas coordinates
+        canvas_x = edit_canvas.canvasx(event.x)
+        canvas_y = edit_canvas.canvasy(event.y)
+        
+        # Update rectangle
+        edit_canvas.coords(rect_id, start_x, start_y, canvas_x, canvas_y)
+    
+    def finish_add_box(event):
+        nonlocal rect_id, boxes
+        if edit_mode.get() != "add" or rect_id is None:
+            return
+            
+        # Get canvas coordinates
+        canvas_x = edit_canvas.canvasx(event.x)
+        canvas_y = edit_canvas.canvasy(event.y)
+        
+        # Ensure we have a valid box (minimum size)
+        end_x, end_y = int(canvas_x), int(canvas_y)
+        x1, y1 = min(start_x, end_x), min(start_y, end_y)
+        x2, y2 = max(start_x, end_x), max(start_y, end_y)
+        
+        if (x2 - x1) > 5 and (y2 - y1) > 5:  # Minimum size check
+            # Add to boxes list
+            boxes.append([x1, y1, x2, y2, rect_id])
+            status_label.config(text=f"Box added at ({x1}, {y1}, {x2}, {y2})")
+        else:
+            # Too small, delete it
+            edit_canvas.delete(rect_id)
+            status_label.config(text="Box too small. Please try again.")
+        
+        rect_id = None
+        set_mode("select")
+    
+    def set_mode(mode):
+        """Set the current edit mode and update UI accordingly"""
+        edit_mode.set(mode)
+        
+        # Remove any bindings
+        edit_canvas.unbind("<ButtonPress-1>")
+        edit_canvas.unbind("<B1-Motion>")
+        edit_canvas.unbind("<ButtonRelease-1>")
+        
+        # Unbind box selection
+        edit_canvas.tag_unbind("box", "<ButtonPress-1>")
+        
+        # Set cursor and bindings based on mode
+        if mode == "add":
+            edit_canvas.config(cursor="cross")
+            status_label.config(text="Click and drag to create a new bounding box")
+            edit_canvas.bind("<ButtonPress-1>", start_add_box)
+            edit_canvas.bind("<B1-Motion>", update_add_box)
+            edit_canvas.bind("<ButtonRelease-1>", finish_add_box)
+            
+            # Update button states
+            add_box_btn.config(bg="#FF9800", state=tk.DISABLED)
+            remove_box_btn.config(bg="#ffffff", state=tk.NORMAL)
+            select_mode_btn.config(bg="#ffffff", state=tk.NORMAL)
+        elif mode == "select":
+            edit_canvas.config(cursor="arrow")
+            status_label.config(text="Click on a box to select it")
+            # Bind box selection
+            edit_canvas.tag_bind("box", "<ButtonPress-1>", on_select_box)
+            
+            # Update button states
+            add_box_btn.config(bg="#ffffff", state=tk.NORMAL)
+            remove_box_btn.config(bg="#ffffff", state=tk.NORMAL)
+            select_mode_btn.config(bg="#FF9800", state=tk.DISABLED)
+    
+    def remove_selected_box():
+        nonlocal selected_box, boxes
+        if selected_box is not None and 0 <= selected_box < len(boxes):
+            # Remove the box from canvas
+            _, _, _, _, rect_id = boxes[selected_box]
+            edit_canvas.delete(rect_id)
+            
+            # Remove from boxes list
+            boxes.pop(selected_box)
+            status_label.config(text=f"Box {selected_box} removed")
+            
+            # Reset selection
+            selected_box = None
+            
+            # Redraw to update box indices
+            redraw_image()
+        else:
+            status_label.config(text="No box selected")
+    
+    def save_and_close():
+        # Convert boxes to OpenCV format (x, y, w, h)
+        cv_boxes = []
+        for x1, y1, x2, y2, _ in sorted(boxes, key=lambda b: b[0]):  # Sort by x-coordinate
+            x = min(x1, x2)
+            y = min(y1, y2)
+            w = abs(x2 - x1)
+            h = abs(y2 - y1)
+            cv_boxes.append((x, y, w, h))
+        
+        # Save boxes back to debug_images
+        debug_images[file_path]['bounding_boxes'] = cv_boxes
+        
+        # Update the green_boxes_img in debug_images
+        display_img = original_img.copy()
+        for x, y, w, h in cv_boxes:
+            cv2.rectangle(display_img, (x, y), (x+w, y+h), (0, 255, 0), 2)
+        
+        img_rgb = cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(img_rgb)
+        debug_images[file_path]['green_boxes_img'] = pil_img
+        
+        # Process the edited boxes to update results
+        update_recognition_results(debug_data, file_path, cv_boxes)
+
+        # Update recognition results for the results window
+        recognition_results = []
+        for fp in pdf_files:
+            if fp in debug_images and 'results' in debug_images[fp]:
+                recognition_results.append(f"{os.path.basename(fp)}: {debug_images[fp]['results']}")
+            else:
+                recognition_results.append(f"{os.path.basename(fp)}: Not processed")
+        
+        # Refresh the results window if it exists
+        if result_window is not None and result_window.winfo_exists():
+            # Update the text area
+            result_window.text_area.configure(state="normal")
+            result_window.text_area.delete(1.0, tk.END)
+            for result in recognition_results:
+                result_window.text_area.insert(tk.END, result + "\n")
+            result_window.text_area.configure(state="disabled")
+        else:
+            # If no results window, create a new one
+            show_recognition_results(recognition_results)
+        
+        messagebox.showinfo("Success", "Bounding boxes updated successfully")
+        edit_window.destroy()
+        
+        # Refresh the debug window to show updated boxes
+        parent_window.destroy()
+        show_debug_window(file_path)
+    
+    # Button for selecting mode
+    select_mode_btn = tk.Button(
+        control_frame,
+        text="Select Mode",
+        command=lambda: set_mode("select"),
+        width=12,
+        height=1,
+        bg="#FF9800",  # Initially selected
+        fg="black",
+        font=("Arial", 10, "bold")
+    )
+    select_mode_btn.pack(side=tk.LEFT, padx=5)
+    
+    # Button for adding a new box
+    add_box_btn = tk.Button(
+        control_frame,
+        text="Add Box",
+        command=lambda: set_mode("add"),
+        width=12,
+        height=1,
+        bg="#ffffff",
+        fg="black",
+        font=("Arial", 10, "bold")
+    )
+    add_box_btn.pack(side=tk.LEFT, padx=5)
+    
+    # Button for removing a selected box
+    remove_box_btn = tk.Button(
+        control_frame,
+        text="Remove Box",
+        command=remove_selected_box,
+        width=12,
+        height=1,
+        bg="#ffffff",
+        fg="black",
+        font=("Arial", 10, "bold")
+    )
+    remove_box_btn.pack(side=tk.LEFT, padx=5)
+    
+    # Save and cancel buttons
+    save_btn = tk.Button(
+        button_frame,
+        text="Save Changes",
+        command=save_and_close,
+        width=15,
+        height=2,
+        bg="#4CAF50",
+        fg="black",
+        font=("Arial", 10, "bold")
+    )
+    save_btn.pack(side=tk.RIGHT, padx=5)
+    
+    cancel_btn = tk.Button(
+        button_frame,
+        text="Cancel",
+        command=edit_window.destroy,
+        width=15,
+        height=2,
+        bg="#f44336",
+        fg="black",
+        font=("Arial", 10, "bold")
+    )
+    cancel_btn.pack(side=tk.RIGHT, padx=5)
+    
+    # Draw initial image with boxes
+    redraw_image()
+    
+    # Set initial mode
+    set_mode("select")
+
+def update_recognition_results(debug_data, file_path, bounding_boxes):
+    """Process the edited bounding boxes to update recognition results."""
+    try:
+        # Get the processed image
+        processed_img = debug_data['processed']
+        np_img = np.array(processed_img)
+        
+        # Create a temporary directory for MNIST-formatted images
+        temp_dir = "/Users/ryan/Desktop/temp_edited_digits"
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Sort bounding boxes by x-coordinate for left-to-right order
+        sorted_boxes = sorted(bounding_boxes, key=lambda box: box[0])
+        
+        # Extract, process and classify each character from sorted bounding boxes
+        digit_results = []
+        mnist_images = []
+        binary_results = []
+        
+        for i, (x, y, w, h) in enumerate(sorted_boxes):
+            # Extract the character region
+            char_roi = np_img[y:y+h, x:x+w]
+            
+            # Convert to MNIST format
+            mnist_digit = preprocess_to_mnist_format(char_roi)
+            mnist_images.append(mnist_digit)
+            
+            # Save for classification
+            digit_filename = os.path.join(temp_dir, f"edited_char_{i+1}.png")
+            cv2.imwrite(digit_filename, mnist_digit)
+            
+            # Classify the character
+            result, binary_label = classify_image(digit_filename)
+            if result is not None:
+                digit_results.append(result)
+                binary_results.append(binary_label)
+            else:
+                digit_results.append("?")
+                binary_results.append("Unknown")
+        
+        # Update debug data with new results
+        debug_data.update({
+            'mnist_images': mnist_images,
+            'results': ''.join(digit_results),
+            'binary_results': binary_results,
+            'bounding_boxes': sorted_boxes
+        })
+        
+        # Clean up temporary directory
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+            
+    except Exception as e:
+        messagebox.showerror("Processing Error", f"Error updating recognition results: {e}")
+        # Update with empty results to prevent further errors
+        debug_data.update({
+            'mnist_images': [],
+            'results': '',
+            'binary_results': [],
+            'bounding_boxes': sorted_boxes
+        })
+
+# Helper function for processing MNIST format images
+def preprocess_to_mnist_format(image):
+    """Convert an image to MNIST format (28x28, centered, grayscale)."""
+    if len(image.shape) > 2:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # Ensure the image is binary
+    _, image = cv2.threshold(image, 128, 255, cv2.THRESH_BINARY)
+    
+    # Find non-zero (foreground) coordinates
+    coords = cv2.findNonZero(image)
+    if coords is None:
+        return np.zeros((28, 28), dtype=np.uint8)
+    
+    # Get bounding rect of character
+    x, y, w, h = cv2.boundingRect(coords)
+    if w == 0 or h == 0:
+        return np.zeros((28, 28), dtype=np.uint8)
+    
+    # Extract the character region
+    digit = image[y:y+h, x:x+w]
+    
+    # Calculate the scale to fit within 20x20 area
+    max_dim = max(w, h)
+    scale = 20.0 / max_dim
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+    
+    # Resize character to fit within 20x20 area
+    resized = cv2.resize(digit, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+    
+    # Create 28x28 canvas and center character
+    canvas = np.zeros((28, 28), dtype=np.uint8)
+    x_offset = (28 - new_w) // 2
+    y_offset = (28 - new_h) // 2
+    canvas[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
+    
+    return canvas
+
 def setup_canvas():
     """Configure the canvas when the window is resized."""
     if pdf_image:
@@ -976,7 +1446,7 @@ try:
 except Exception:
     pass
 
-# Global variables
+# Global variables (removed replace_var and user_entry_var)
 pdf_image = None
 tk_image = None
 scaled_image = None
@@ -992,6 +1462,7 @@ original_image = None
 zoom_mode = False
 pan_start_x = None
 pan_start_y = None
+result_window = None  # Add this to the global variables section
 
 main_frame = tk.Frame(root)
 main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -1045,6 +1516,7 @@ instructions = tk.Label(
 )
 instructions.pack(pady=5, anchor=tk.W)
 
+# In your control_frame setup, add zoom controls
 zoom_button = tk.Button(
     control_frame, 
     text="Switch to Zoom Mode", 
@@ -1069,10 +1541,12 @@ reset_zoom_button = tk.Button(
 )
 reset_zoom_button.grid(row=0, column=6, padx=5, pady=5)
 
+# Configure the canvas for scrolling when zoomed
 h_scrollbar = ttk.Scrollbar(canvas_frame, orient="horizontal", command=canvas.xview)
 v_scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
 canvas.configure(xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set)
 
+# Pack all elements in the canvas_frame
 canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
