@@ -8,6 +8,7 @@ A deep learning-based system to recognize handwritten characters (digits 0–9, 
 
 # Demo Video
 Watch the system in action, demonstrating PDF upload, region cropping, character recognition, and Excel export:
+<br>Click this line--->https://drive.google.com/file/d/17hfJWyP6_q138eyxMVeWRRzfl2pONjxK/view?resourcekey<br/>
 
 # Features
 - High-Accuracy Recognition: Achieves 99% accuracy for digits and binary classification, 98% for letters using DigitNet, LetterNet, and BinaryNet CNNs.
@@ -40,14 +41,24 @@ pip install -r requirements.txt
    - For Wins user, you can refer to this link below:
    - https://www.youtube.com/watch?v=oO6UeweyXnw
 # Usage
-1. Cd to HRC folder and change the path to your own pc path in HRC.py(`Ctrl+F` then input 'user')
-2. Process a PDF in the GUI
+I recommend use PyCharm, it is much easier than vscode haha
+
+1. Configure the HRC Paths
+   - Open 'HRC/HRC.py' in a text editor and search for "users"(e.g., `Ctrl+F`)
+   - Replace the paths with your local Paths
+     
+3. Process a PDF in the GUI
+   - Run the application
+     ```
+     python HRC.py
+     ```
    - Upload a PDF in the GUI
    - Crop a region(e.g., course code "STAT S313F")
    - Click “Classify” to recognize characters
    - Export to Excel
 
 # Results
+
 
 # Limitations and Future Work
 - **Limitations**: Manual cropping; BinaryNet misclassifies similar characters.
