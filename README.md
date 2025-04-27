@@ -40,14 +40,23 @@ pip install -r requirements.txt
    - For Wins user, you can refer to this link below:
    - https://www.youtube.com/watch?v=oO6UeweyXnw
 # Usage
-1. Use PyCharm/Vscode/Others and run the application 
-# Project Structure
+1. Cd to HRC folder and change the path to your own pc path in HRC.py(`Ctrl+F` then input 'user')
+2. Process a PDF in the GUI
+   - Upload a PDF in the GUI
+   - Crop a region(e.g., course code "STAT S313F")
+   - Click “Classify” to recognize characters
+   - Export to Excel
 
 # Results
 
 # Limitations and Future Work
+- **Limitations**: Manual cropping; BinaryNet misclassifies similar characters.
+- **Future Work**: Automate cropping, add lowercase recognition.
 
 # Acknowledgments
+- **Datasets**: MNIST, EMNIST.
+- **Libraries**: PyTorch, OpenCV, Tkinter.
+- **Inspiration**: LeCun et al. (1998), Nockels et al. (2024).
 
 # Contact
 oilaamt@gmail.com
