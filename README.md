@@ -22,9 +22,25 @@ Watch the system in action, demonstrating PDF upload, region cropping, character
 
 
 # Installtion
-
+1. Clone the Repository:
+  ```
+git clone https://github.com/ClaudiaTam/S461F_DS_Project
+  ```
+3. Set Up Virtual Environment(Python 3.8+):
+```
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+```
+5. Install Dependencies:
+```
+pip install -r requirements.txt
+```
+7. Install Poppler(for PDFs):
+   - Download Poppler and add `bin` to PATH
+   - For Wins user, you can refer to this link below:
+   - https://www.youtube.com/watch?v=oO6UeweyXnw
 # Usage
-
+1. Use PyCharm/Vscode/Others and run the application 
 # Project Structure
 
 # Results
