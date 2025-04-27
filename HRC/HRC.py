@@ -86,7 +86,7 @@ class BinaryNet(torch.nn.Module):
         self.dropout2 = torch.nn.Dropout(0.4)
         self.fc1 = torch.nn.Linear(256 * 5 * 5, 512)
         self.fc2 = torch.nn.Linear(512, 256)
-        self.fc3 = torch.nn.Linear(256, 2)  # 2 outputs: digit (0) or letter (1)
+        self.fc3 = torch.nn.Linear(256, 1)  # 2 outputs: digit (0) or letter (1)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -105,7 +105,7 @@ class BinaryNet(torch.nn.Module):
         x = self.fc2(x)
         x = torch.nn.functional.relu(x)
         x = self.fc3(x)
-        output = torch.nn.functional.log_softmax(x, dim=1)
+        output = torch.sigmoid(x)
         return output
 
 # Load the pre-trained digit classification model
