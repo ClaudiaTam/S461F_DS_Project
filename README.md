@@ -46,14 +46,20 @@ I recommend to use PyCharm, it is much more convenient than vscode haha
 1. Configure the HRC Paths
    - Open HRC/`HRC.py` in a text editor and search for "users"(e.g., `Ctrl+F`)
    - Replace the paths with your local Paths
+  
+   <br>**Example**<br/>
+   - ![path](assets/path.png)
      
-3. Process a PDF in the GUI
+<br> <br/>    
+2. Process a PDF in the GUI
    - Run the application
      ```
      python HRC.py
      ```
    - Upload a PDF in the GUI
    - Crop a region(e.g., course code "STAT S313F")
+     - ![crop_coursecode](assets/crop_course_code.PNG)
+   <br> <br/>
    - Click “Classify” to recognize characters
    - Export to Excel
 
@@ -62,11 +68,21 @@ I recommend to use PyCharm, it is much more convenient than vscode haha
    - ![DigitNet](assets/plot_digitnet.png)
    - ![LetterNet](assets/plot_letternet.png)
    - ![BinaryNet](assets/plot_binarynet.png)
+   <br> <br/>
+   <br>**The Performance Summary of Models**<br/>
+   - ![summary](assets/performance_allmodels.png)
+   
 
-
+<br> <br/>
 
  2. Application Performance
-    - 
+    - **The Student Number and Exam Number Recognition:**
+    - ![GUI_SID](assets/gui_sid.png)
+    - ![GUI_EXAM](assets/gui_examnum.png)
+    - ![GUI_SID2](assets/gui_output1.0.png)
+    - **The Course Code Recognition:**
+    - ![GUI_COURSE](assets/gui_coursecode.png)
+    - ![GUI_course](assets/gui_output2.png)
 
 # Limitations and Future Work
 - **Limitations**: Manual cropping; BinaryNet misclassifies similar characters.
