@@ -4,7 +4,7 @@
 A deep learning-based system to recognize handwritten characters (digits 0–9, letters A–Z) in exam papers, automating data extraction for course codes, exam numbers, and student numbers. The system uses convolutional neural networks (CNNs), a user-friendly Tkinter GUI for manual region cropping, and exports results to Excel, reducing educator workload and errors.
 <br>
 <br>**Exam Paper Sample**<br/>
-![Exam_Paper](12531103-1.png)
+![Exam_Paper](assets/12531103-1.png)
 
 # Demo Video
 Watch the system in action, demonstrating PDF upload, region cropping, character recognition, and Excel export:
