@@ -8,7 +8,7 @@ A deep learning-based system to recognize handwritten characters (digits 0–9, 
 
 # Demo Video
 Watch the system in action, demonstrating PDF upload, region cropping, character recognition, and Excel export:
-<br>Click this line--->https://drive.google.com/file/d/17hfJWyP6_q138eyxMVeWRRzfl2pONjxK/view?resourcekey<br/>
+<br>Click this link--->https://drive.google.com/file/d/17hfJWyP6_q138eyxMVeWRRzfl2pONjxK/view?resourcekey<br/>
 
 # Features
 - High-Accuracy Recognition: Achieves 99% accuracy for digits(DigitNet model), and binary classification(BinaryNet model), 98% for uppercase letters using LetterNet model.
