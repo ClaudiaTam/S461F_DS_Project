@@ -1,5 +1,5 @@
 # S461F Data Science Project
-# Handwritten Character Recognition System for Exam Papers
+# Deep-Learning-Based System for Handwritten Character Recognition System in Exam Papers
 
 A deep learning-based system to recognize handwritten characters (digits 0–9, letters A–Z) in exam papers, automating data extraction for course codes, exam numbers, and student numbers. The system uses convolutional neural networks (CNNs), a user-friendly Tkinter GUI for manual region cropping, and exports results to Excel, reducing educator workload and errors.
 <br>
