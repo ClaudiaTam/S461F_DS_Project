@@ -11,7 +11,7 @@ Watch the system in action, demonstrating PDF upload, region cropping, character
 <br>Click this line--->https://drive.google.com/file/d/17hfJWyP6_q138eyxMVeWRRzfl2pONjxK/view?resourcekey<br/>
 
 # Features
-- High-Accuracy Recognition: Achieves 99% accuracy for digits and binary classification, 98% for letters using DigitNet, LetterNet, and BinaryNet CNNs.
+- High-Accuracy Recognition: Achieves 99% accuracy for digits(DigitNet model), and binary classification(BinaryNet model), 98% for uppercase letters using LetterNet model.
 
 - Manual Region Cropping: Users crop specific regions (e.g., course codes) via an intuitive GUI.
 
@@ -41,10 +41,10 @@ pip install -r requirements.txt
    - For Wins user, you can refer to this link below:
    - https://www.youtube.com/watch?v=oO6UeweyXnw
 # Usage
-I recommend use PyCharm, it is much easier than vscode haha
+I recommend to use PyCharm, it is much more convenient than vscode haha
 
 1. Configure the HRC Paths
-   - Open 'HRC/HRC.py' in a text editor and search for "users"(e.g., `Ctrl+F`)
+   - Open HRC/`HRC.py` in a text editor and search for "users"(e.g., `Ctrl+F`)
    - Replace the paths with your local Paths
      
 3. Process a PDF in the GUI
@@ -58,7 +58,15 @@ I recommend use PyCharm, it is much easier than vscode haha
    - Export to Excel
 
 # Results
+1. Model Performance
+   - ![DigitNet](assets/plot_digitnet.png)
+   - ![LetterNet](assets/plot_letternet.png)
+   - ![BinaryNet](assets/plot_binarynet.png)
 
+
+
+ 2. Application Performance
+    - 
 
 # Limitations and Future Work
 - **Limitations**: Manual cropping; BinaryNet misclassifies similar characters.
